@@ -1,0 +1,23 @@
+{
+  "name": "pairspace-server",
+  "version": "1.0.0",
+  "description": "PairSpace WebSocket relay server",
+  "scripts": {
+    "test": "node --test",
+    "dev": "node --watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "type": "module",
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
+    "typescript": "^7.0.2"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  }
+}

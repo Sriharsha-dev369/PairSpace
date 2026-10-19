@@ -1,0 +1,19 @@
+# dependencies (regenerable from package-lock.json)
+node_modules/
+
+# macOS
+.DS_Store
+
+# logs
+*.log
+
+# secrets and local config (never commit these)
+.env
+.env.*
+!.env.example
+
+# build output and test coverage
+dist/
+coverage/
+
+CLAUDE.md
