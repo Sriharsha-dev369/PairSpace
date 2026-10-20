@@ -1,6 +1,7 @@
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
 import { WebSocket, WebSocketServer } from "ws";
+import * as awarenessProtocol from "y-protocols/awareness";
 import * as syncProtocol from "y-protocols/sync";
 import * as Y from "yjs";
 
@@ -17,11 +18,19 @@ interface Options {
 
 interface Room {
   doc: Y.Doc; // the server's copy, so late joiners can sync even when nobody else is online
+  awareness: awarenessProtocol.Awareness; // live presence (names, cursors), never saved
   conns: Set<WebSocket>;
+}
+
+interface AwarenessChanges {
+  added: number[];
+  updated: number[];
+  removed: number[];
 }
 
 // message types of the y-websocket protocol
 const MESSAGE_SYNC = 0;
+const MESSAGE_AWARENESS = 1;
 
 // the room name comes from the URL, which the client controls, so restrict it
 const ROOM_NAME = /^[A-Za-z0-9_-]{1,64}$/;
@@ -38,9 +47,17 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
   const rooms = new Map<string, Room>();
   let nextId = 1;
 
+  function broadcast(room: Room, message: Uint8Array, except: unknown) {
+    for (const conn of room.conns) {
+      if (conn !== except && conn.readyState === WebSocket.OPEN) conn.send(message);
+    }
+  }
+
   function openRoom(name: string): Room {
     const doc = new Y.Doc();
-    const room: Room = { doc, conns: new Set() };
+    const awareness = new awarenessProtocol.Awareness(doc);
+    awareness.setLocalState(null); // the server itself has no presence
+    const room: Room = { doc, awareness, conns: new Set() };
 
     // the server creates the first file: if clients did, two joining at once would race
     const file = new Y.Map<unknown>();
@@ -50,10 +67,22 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
 
     // forward every change to everyone in the room except the connection it came from
     doc.on("update", (update: Uint8Array, origin: unknown) => {
-      const message = syncMessage((e) => syncProtocol.writeUpdate(e, update));
-      for (const conn of room.conns) {
-        if (conn !== origin && conn.readyState === WebSocket.OPEN) conn.send(message);
-      }
+      broadcast(
+        room,
+        syncMessage((e) => syncProtocol.writeUpdate(e, update)),
+        origin,
+      );
+    });
+
+    awareness.on("update", ({ added, updated, removed }: AwarenessChanges, origin: unknown) => {
+      const changed = [...added, ...updated, ...removed];
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, MESSAGE_AWARENESS);
+      encoding.writeVarUint8Array(
+        encoder,
+        awarenessProtocol.encodeAwarenessUpdate(awareness, changed),
+      );
+      broadcast(room, encoding.toUint8Array(encoder), origin);
     });
 
     rooms.set(name, room);
@@ -78,7 +107,7 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
       room = openRoom(name);
       say(`room "${name}" created (${rooms.size} rooms)`);
     }
-    const { doc, conns } = room;
+    const { doc, awareness, conns } = room;
     conns.add(socket);
     say(`joined "${name}" (${conns.size} in room)`);
 
@@ -87,12 +116,22 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
 
     socket.on("message", (data) => {
       const decoder = decoding.createDecoder(new Uint8Array(data as ArrayBuffer));
-      if (decoding.readVarUint(decoder) !== MESSAGE_SYNC) return;
-
-      const reply = encoding.createEncoder();
-      encoding.writeVarUint(reply, MESSAGE_SYNC);
-      syncProtocol.readSyncMessage(decoder, reply, doc, socket);
-      if (encoding.length(reply) > 1) socket.send(encoding.toUint8Array(reply));
+      switch (decoding.readVarUint(decoder)) {
+        case MESSAGE_SYNC: {
+          const reply = encoding.createEncoder();
+          encoding.writeVarUint(reply, MESSAGE_SYNC);
+          syncProtocol.readSyncMessage(decoder, reply, doc, socket);
+          if (encoding.length(reply) > 1) socket.send(encoding.toUint8Array(reply));
+          break;
+        }
+        case MESSAGE_AWARENESS:
+          awarenessProtocol.applyAwarenessUpdate(
+            awareness,
+            decoding.readVarUint8Array(decoder),
+            socket,
+          );
+          break;
+      }
     });
 
     socket.on("close", (code) => {
@@ -101,6 +140,7 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
 
       // an empty room is never used again unless someone rejoins, so don't keep it
       if (conns.size === 0) {
+        awareness.destroy();
         doc.destroy();
         rooms.delete(name);
         say(`room "${name}" removed (${rooms.size} rooms)`);

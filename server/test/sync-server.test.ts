@@ -158,6 +158,22 @@ describe("sync server", () => {
     });
   });
 
+  // ---------- presence (names, colours, cursors: shared live, never saved) ----------
+
+  describe("presence", () => {
+    const sees = (viewer: YjsClient, name: string) =>
+      [...viewer.provider.awareness.getStates().values()].some((s) => s.user?.name === name);
+
+    it("shows each person's presence to the others in the room", async () => {
+      const alice = await joinRoom("room1");
+      const bob = await joinRoom("room1");
+
+      alice.provider.awareness.setLocalStateField("user", { name: "Alice" });
+
+      await waitFor(() => sees(bob, "Alice"), "bob to see alice's presence");
+    });
+  });
+
   // ---------- the room's files ----------
 
   describe("room files", () => {
