@@ -21,15 +21,14 @@ Early. A WebSocket relay server with rooms exists. The editor, Yjs sync, persist
 
 Requires Node 24 or newer (`nvm use` reads `.nvmrc`).
 
-```
-cd server
-npm install
-npm run dev          # relay on ws://localhost:8080 (restarts on change)
-npm test             # automated tests (Vitest); npm run test:watch to keep running
-npm run typecheck    # TypeScript check
-npm run format       # Biome: fix lint + formatting
-npm run build        # compile to dist/
-npm start            # run the compiled server
-```
+npm workspaces: `server/` (WebSocket server) and `web/` (Vite + React app). Run everything from the repo root.
 
-`web/test.html` is a bare manual test page: open it in two tabs using the same `#room` in the URL.
+```
+npm install
+npm run dev -w server   # server on ws://localhost:8080 (restarts on change)
+npm run dev -w web      # web app on http://localhost:5173
+npm test                # all automated tests (Vitest)
+npm run typecheck       # TypeScript check, all packages
+npm run lint            # Biome check; npm run format to fix
+npm run build -w server && npm start -w server   # compiled server
+```
