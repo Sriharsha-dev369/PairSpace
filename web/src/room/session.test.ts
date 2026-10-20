@@ -6,6 +6,18 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { joinRoom, type RoomSession, type User } from "./session";
 
 const alice: User = { name: "Alice", color: "#f472b6" };
+const bob: User = { name: "Bob", color: "#60a5fa" };
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// poll until a condition is true (never sleep and hope)
+async function waitFor(condition: () => boolean, what: string, timeoutMs = 1000) {
+  const start = Date.now();
+  while (!condition()) {
+    if (Date.now() - start > timeoutMs) throw new Error(`timed out waiting for: ${what}`);
+    await sleep(5);
+  }
+}
 
 describe("room session", () => {
   let server: SyncServer;
@@ -34,5 +46,20 @@ describe("room session", () => {
 
     expect(session.status()).toBe("connected");
     expect(session.files().map((f) => f.name)).toEqual(["main.js"]);
+  });
+
+  it("lists everyone in the room with their name and colour", async () => {
+    const mine = join("room1", alice);
+    const theirs = join("room1", bob);
+    await Promise.all([mine.synced, theirs.synced]);
+
+    await waitFor(() => theirs.people().length === 2, "bob to see two people");
+
+    expect(theirs.people()).toEqual(
+      expect.arrayContaining([
+        { name: "Alice", color: alice.color, isMe: false },
+        { name: "Bob", color: bob.color, isMe: true },
+      ]),
+    );
   });
 });
