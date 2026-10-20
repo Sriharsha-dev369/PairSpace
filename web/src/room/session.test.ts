@@ -60,6 +60,18 @@ describe("room session", () => {
     expect(notified).toBeGreaterThan(0);
   });
 
+  it("tells the UI when someone joins", async () => {
+    const mine = join("room1", alice);
+    await mine.synced;
+    let notified = 0;
+    mine.subscribe(() => notified++);
+
+    join("room1", bob);
+
+    await waitFor(() => mine.people().length === 2, "alice to see bob");
+    expect(notified).toBeGreaterThan(0);
+  });
+
   it("lists everyone in the room with their name and colour", async () => {
     const mine = join("room1", alice);
     const theirs = join("room1", bob);

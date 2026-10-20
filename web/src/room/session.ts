@@ -50,6 +50,7 @@ export function joinRoom({ serverUrl, room, user }: JoinOptions): RoomSession {
     for (const listener of listeners) listener();
   };
   provider.on("status", notify);
+  awareness.on("change", notify);
 
   const synced = new Promise<void>((resolve) => {
     if (provider.synced) resolve();
