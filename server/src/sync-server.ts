@@ -20,6 +20,7 @@ interface Room {
   doc: Y.Doc; // the server's copy, so late joiners can sync even when nobody else is online
   awareness: awarenessProtocol.Awareness; // live presence (names, cursors), never saved
   conns: Set<WebSocket>;
+  presenceOf: Map<WebSocket, Set<number>>; // the awareness client ids each connection owns
 }
 
 interface AwarenessChanges {
@@ -67,7 +68,7 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
     const doc = new Y.Doc();
     const awareness = new awarenessProtocol.Awareness(doc);
     awareness.setLocalState(null); // the server itself has no presence
-    const room: Room = { doc, awareness, conns: new Set() };
+    const room: Room = { doc, awareness, conns: new Set(), presenceOf: new Map() };
 
     // the server creates the first file: if clients did, two joining at once would race
     const file = new Y.Map<unknown>();
@@ -85,6 +86,12 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
     });
 
     awareness.on("update", ({ added, updated, removed }: AwarenessChanges, origin: unknown) => {
+      // remember which presence entries each connection owns, to clean them up if it drops
+      const owned = room.presenceOf.get(origin as WebSocket);
+      if (owned) {
+        for (const clientId of added) owned.add(clientId);
+        for (const clientId of removed) owned.delete(clientId);
+      }
       broadcast(room, awarenessMessage(awareness, [...added, ...updated, ...removed]), origin);
     });
 
@@ -110,8 +117,9 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
       room = openRoom(name);
       say(`room "${name}" created (${rooms.size} rooms)`);
     }
-    const { doc, awareness, conns } = room;
+    const { doc, awareness, conns, presenceOf } = room;
     conns.add(socket);
+    presenceOf.set(socket, new Set());
     say(`joined "${name}" (${conns.size} in room)`);
 
     // start the handshake: tell the client what the server already has
@@ -144,6 +152,13 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
     socket.on("close", (code) => {
       conns.delete(socket);
       say(`left "${name}", code ${code} (${conns.size} in room)`);
+
+      // a dropped connection never says goodbye, so remove its presence for everyone else
+      const owned = presenceOf.get(socket);
+      presenceOf.delete(socket);
+      if (owned && owned.size > 0) {
+        awarenessProtocol.removeAwarenessStates(awareness, [...owned], null);
+      }
 
       // an empty room is never used again unless someone rejoins, so don't keep it
       if (conns.size === 0) {

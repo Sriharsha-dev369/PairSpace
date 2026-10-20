@@ -183,6 +183,20 @@ describe("sync server", () => {
 
       await waitFor(() => sees(bob, "Alice"), "bob to see alice, who was there first");
     });
+
+    it("removes a person's presence when their connection drops without a goodbye", async () => {
+      const alice = await joinRoom("room1");
+      const bob = await joinRoom("room1");
+      alice.provider.awareness.setLocalStateField("user", { name: "Alice" });
+      await waitFor(() => sees(bob, "Alice"), "bob to see alice");
+
+      // a crashed tab: the socket just closes, without the "I'm leaving" presence message
+      // a graceful provider.destroy() would send
+      alice.provider.shouldConnect = false;
+      alice.provider.ws?.close();
+
+      await waitFor(() => !sees(bob, "Alice"), "alice's presence to disappear for bob");
+    });
   });
 
   // ---------- the room's files ----------
