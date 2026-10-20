@@ -35,3 +35,13 @@ test("two people in the same room see each other's typing", async ({ browser }) 
 
   await expect(bob.locator(".cm-content")).toContainText("const greeting = 'hi from alice';");
 });
+
+test("shows the connection status and who else is in the room", async ({ browser }) => {
+  const url = await newRoomUrl(browser);
+  const alice = await openRoomAs(browser, url);
+  const bob = await openRoomAs(browser, url);
+  const aliceName = await alice.getByTestId("my-name").innerText();
+
+  await expect(alice.getByTestId("connection-status")).toHaveText("Connected");
+  await expect(bob.getByTestId("other-person")).toHaveText([aliceName]);
+});

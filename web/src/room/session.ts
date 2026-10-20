@@ -10,6 +10,7 @@ export interface User {
 }
 
 export interface Person extends User {
+  id: number; // unique per connected client, even if two guests share a name
   isMe: boolean;
 }
 
@@ -69,6 +70,7 @@ export function joinRoom({ serverUrl, room, user }: JoinOptions): RoomSession {
       [...awareness.getStates().entries()]
         .filter(([, state]) => state.user)
         .map(([clientId, state]) => ({
+          id: clientId,
           name: state.user.name,
           color: state.user.color,
           isMe: clientId === doc.clientID,

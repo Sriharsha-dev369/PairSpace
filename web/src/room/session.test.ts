@@ -81,8 +81,8 @@ describe("room session", () => {
 
     expect(theirs.people()).toEqual(
       expect.arrayContaining([
-        { name: "Alice", color: alice.color, isMe: false },
-        { name: "Bob", color: bob.color, isMe: true },
+        { id: mine.doc.clientID, name: "Alice", color: alice.color, isMe: false },
+        { id: theirs.doc.clientID, name: "Bob", color: bob.color, isMe: true },
       ]),
     );
   });
