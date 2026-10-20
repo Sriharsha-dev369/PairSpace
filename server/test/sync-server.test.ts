@@ -29,6 +29,15 @@ async function waitFor(condition: () => boolean, what: string, timeoutMs = 1000)
   }
 }
 
+// deterministic random numbers, so a failing run can be replayed from its printed seed
+function seededRandom(seed: number) {
+  let state = seed % 2147483647 || 1;
+  return () => {
+    state = (state * 48271) % 2147483647;
+    return state / 2147483647;
+  };
+}
+
 // To prove something did NOT happen we can't wait for it. Instead we wait for something we know
 // will happen, then give the network a short extra moment, then check.
 const SETTLE_MS = 50;
@@ -101,6 +110,51 @@ describe("sync server", () => {
       alice.doc.getText("probe").insert(0, "hello");
 
       await waitFor(() => text(bob) === "hello", "bob to see alice's edit");
+    });
+
+    it("gives a late joiner everything written before they arrived", async () => {
+      const alice = await joinRoom("room1");
+      alice.doc.getText("probe").insert(0, "written earlier");
+      await sleep(SETTLE_MS); // let the server receive it
+
+      const bob = await joinRoom("room1");
+
+      expect(text(bob)).toBe("written earlier");
+    });
+
+    it("converges when three people edit at the same time", async () => {
+      const clients = await Promise.all([joinRoom("busy"), joinRoom("busy"), joinRoom("busy")]);
+      const seed = Date.now();
+      const random = seededRandom(seed);
+      let inserted = 0;
+
+      // all edits are made before any of them can arrive anywhere else, so they truly overlap
+      for (let i = 0; i < 60; i++) {
+        const t = clients[i % 3].doc.getText("probe");
+        const chunk = `${i % 3}${"x".repeat(Math.floor(random() * 3))}`;
+        t.insert(Math.floor(random() * (t.length + 1)), chunk);
+        inserted += chunk.length;
+      }
+
+      const stateOf = (c: YjsClient) => Y.encodeStateVector(c.doc).toString();
+      await waitFor(
+        () => clients.every((c) => stateOf(c) === stateOf(clients[0])),
+        `every client to receive every edit (seed ${seed})`,
+      );
+      expect(new Set(clients.map(text)).size, `seed ${seed}`).toBe(1);
+      expect(text(clients[0]).length, `seed ${seed}`).toBe(inserted);
+    });
+
+    it("never mixes documents between rooms", async () => {
+      const alice = await joinRoom("room1");
+      const bob = await joinRoom("room1");
+      const carol = await joinRoom("room2");
+
+      alice.doc.getText("probe").insert(0, "only for room1");
+      await waitFor(() => text(bob) === "only for room1", "bob to see alice's edit");
+      await sleep(SETTLE_MS);
+
+      expect(text(carol)).toBe("");
     });
   });
 
