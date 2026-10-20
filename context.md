@@ -8,7 +8,7 @@ How the three files relate:
 | `CLAUDE.md` | Working instructions for Claude (commands, stack, workflow). Local only: it is in `.gitignore` |
 | `context.md` (this file) | *Where we are*: what was reasoned, decided and learned, and what's next |
 
-Status: idea deep-dive done; relay server with rooms built and tested (not deployed). Working toward the Phase 1 MVP. Last updated 2026-10-20.
+Status: M1 done (live co-editing, presence, cursors, tested end to end). Not deployed. Next: M2 reliability. Last updated 2026-10-21.
 
 ---
 
@@ -153,14 +153,15 @@ Also: collaborative undo/redo (each user undoes only their own edits) is subtle,
 
 ## 7. Current position and next steps
 
-**Built so far (`server/` and `web/`):**
-- `server/src/relay.ts`: WebSocket relay with rooms (room = URL path, name validated, empty rooms removed). `server/src/index.ts` starts it; port comes from `PORT` (default 8080).
-- `server/test/relay.test.ts`: 26 Vitest tests (relaying, rooms, name validation, edge cases) plus 4 `todo` tests for known gaps (heartbeat, max message size, presence, catch-up).
-- Tooling: Vitest, tsx, tsup, Biome, npm. Checks: `npm run typecheck`, `npm run lint`, `npm test`.
-- `web/test.html`: bare manual test page, only for eyeballing.
-- Not deployed (deploy happens when the MVP is built).
+**M1 is done.** Two people on the same room link co-edit one file live, with names, colours, labelled cursors and a connection status.
 
-**MVP still needs (Phase 1):** a real frontend with a code editor, Yjs-based collaborative editing (incl. deciding `y-websocket`'s ready-made server vs our own relay), presence/cursors with heartbeats, auth, a database with saved documents, reconnect handling, and the polish that makes the first click impressive.
+| Part | Where | Tests |
+|---|---|---|
+| Sync server: Yjs sync and presence over WebSocket, rooms in memory, server-created first file, input validation | `server/src/sync-server.ts` (started by `server/src/index.ts`) | `server/test/sync-server.test.ts` (23) |
+| Room session: the client-side module the UI uses (join, files, people, status, change notifications) | `web/src/room/session.ts` | `web/src/room/session.test.ts` (4) |
+| UI: routing, room page, header, CodeMirror editor, guest identity | `web/src/App.tsx`, `web/src/pages/RoomPage.tsx`, `web/src/room/*.tsx`, `web/src/room/guest.ts` | `e2e/room.spec.ts` (4) + `e2e/smoke.spec.ts` |
 
-**Roadmap:** `ROADMAP.md` (M0 to M11). **Next: M1**, the core vertical slice, a Vite frontend with an editor wired to Yjs through the relay, so two browsers genuinely co-edit. Auth, database and presence all hang off a working editor. (Proposal, not yet agreed.)
+**Known gaps (planned):** nothing is saved (M3); no heartbeats, so a silently dead connection lingers until the OS notices (M2); reconnect UX is the provider's default (M2); no message size limit (M2); the web bundle is 866 kB, needs code splitting (M10).
+
+**Next: M2 reliability** (heartbeats, reconnect with resync, offline edits, fault-injection test). See `ROADMAP.md`.
 

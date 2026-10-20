@@ -15,7 +15,7 @@ delayed networks and concurrent changes.
 
 ## Status
 
-Early. A WebSocket relay server with rooms exists. The editor, Yjs sync, persistence and reconnect do not yet.
+M1 done: open the web app, share the room link, and edit one file together live with names and cursors. Not saved yet (M3), not deployed.
 
 ## Run it
 
