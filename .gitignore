@@ -17,3 +17,7 @@ dist/
 coverage/
 
 CLAUDE.md
+
+# Playwright output
+test-results/
+playwright-report/
