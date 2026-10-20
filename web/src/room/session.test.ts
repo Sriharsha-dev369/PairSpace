@@ -48,6 +48,18 @@ describe("room session", () => {
     expect(session.files().map((f) => f.name)).toEqual(["main.js"]);
   });
 
+  it("tells the UI when the connection drops", async () => {
+    const session = join();
+    await session.synced;
+    let notified = 0;
+    session.subscribe(() => notified++);
+
+    await server.close();
+
+    await waitFor(() => session.status() === "disconnected", "status to become disconnected");
+    expect(notified).toBeGreaterThan(0);
+  });
+
   it("lists everyone in the room with their name and colour", async () => {
     const mine = join("room1", alice);
     const theirs = join("room1", bob);

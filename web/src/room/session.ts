@@ -24,6 +24,7 @@ export interface RoomSession {
   awareness: Awareness;
   synced: Promise<void>; // resolves once the server's copy of the room has been received
   status(): ConnectionStatus;
+  subscribe(listener: () => void): () => void; // called when status, people or files may have changed
   people(): Person[];
   files(): RoomFile[];
   leave(): void;
@@ -44,6 +45,12 @@ export function joinRoom({ serverUrl, room, user }: JoinOptions): RoomSession {
   // colorLight is what CodeMirror's Yjs binding uses to tint this person's selections
   awareness.setLocalStateField("user", { ...user, colorLight: `${user.color}33` });
 
+  const listeners = new Set<() => void>();
+  const notify = () => {
+    for (const listener of listeners) listener();
+  };
+  provider.on("status", notify);
+
   const synced = new Promise<void>((resolve) => {
     if (provider.synced) resolve();
     else provider.once("sync", () => resolve());
@@ -53,6 +60,10 @@ export function joinRoom({ serverUrl, room, user }: JoinOptions): RoomSession {
     doc,
     awareness,
     synced,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
     people: () =>
       [...awareness.getStates().entries()]
         .filter(([, state]) => state.user)
