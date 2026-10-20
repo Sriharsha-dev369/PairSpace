@@ -1,8 +1,8 @@
-// Spec for the relay server: read the test names top to bottom to see how it should behave.
+// Spec for the sync server: read the test names top to bottom to see how it should behave.
 // Every test starts its own server on a random free port, so tests never affect each other.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createRelayServer, type RelayServer } from "../src/relay";
+import { createSyncServer, type SyncServer } from "../src/sync-server";
 
 // ---------- test helpers ----------
 
@@ -28,12 +28,12 @@ async function waitFor(condition: () => boolean, what: string, timeoutMs = 1000)
 // will arrive, then give the network a short extra moment, then check the other client got nothing.
 const SETTLE_MS = 50;
 
-describe("relay server", () => {
-  let server: RelayServer;
+describe("sync server", () => {
+  let server: SyncServer;
   let clients: TestClient[];
 
   beforeEach(async () => {
-    server = await createRelayServer({ port: 0 });
+    server = await createSyncServer({ port: 0 });
     clients = [];
   });
 

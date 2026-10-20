@@ -1,6 +1,6 @@
 import { WebSocket, WebSocketServer } from "ws";
 
-export interface RelayServer {
+export interface SyncServer {
   port: number;
   roomCount(): number;
   close(): Promise<void>;
@@ -14,7 +14,7 @@ interface Options {
 // the room name comes from the URL, which the client controls, so restrict it
 const ROOM_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
-export function createRelayServer({ port, log = () => {} }: Options): Promise<RelayServer> {
+export function createSyncServer({ port, log = () => {} }: Options): Promise<SyncServer> {
   const wss = new WebSocketServer({ port });
 
   // room name -> the connections currently in it
