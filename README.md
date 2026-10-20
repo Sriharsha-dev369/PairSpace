@@ -4,8 +4,7 @@ Real-time collaborative code editor, built as a learning project in distributed 
 multiple people edit one document at the same time over an unreliable network.
 
 - `idea.md`: what we're building and why
-- `context.md`: what has been reasoned and decided so far
-- `CLAUDE.md`: how we work, plus the decision log
+- `context.md`: reasoning so far, concepts, and the decision log
 
 ## Status
 
@@ -18,9 +17,12 @@ Requires Node 24 or newer (`nvm use` reads `.nvmrc`).
 ```
 cd server
 npm install
-npm run dev        # relay on ws://localhost:8080
-npm test           # automated tests
-npm run typecheck
+npm run dev          # relay on ws://localhost:8080 (restarts on change)
+npm test             # automated tests (Vitest); npm run test:watch to keep running
+npm run typecheck    # TypeScript check
+npm run format       # Biome: fix lint + formatting
+npm run build        # compile to dist/
+npm start            # run the compiled server
 ```
 
 `web/test.html` is a bare manual test page: open it in two tabs using the same `#room` in the URL.

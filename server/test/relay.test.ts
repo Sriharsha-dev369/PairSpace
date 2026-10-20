@@ -1,9 +1,8 @@
 // Spec for the relay server: read the test names top to bottom to see how it should behave.
 // Every test starts its own server on a random free port, so tests never affect each other.
 
-import { describe, it, beforeEach, afterEach } from "node:test";
-import assert from "node:assert/strict";
-import { createRelayServer, type RelayServer } from "../src/relay.ts";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createRelayServer, type RelayServer } from "../src/relay";
 
 // ---------- test helpers ----------
 
@@ -64,7 +63,9 @@ describe("relay server", () => {
     socket.addEventListener("message", (e) => client.messages.push(String(e.data)));
     await new Promise((resolve, reject) => {
       socket.addEventListener("open", resolve, { once: true });
-      socket.addEventListener("error", () => reject(new Error("could not connect")), { once: true });
+      socket.addEventListener("error", () => reject(new Error("could not connect")), {
+        once: true,
+      });
     });
     clients.push(client);
     return client;
@@ -83,7 +84,7 @@ describe("relay server", () => {
       alice.send("hello");
       await gotMessages(bob, 1);
 
-      assert.deepEqual(bob.messages, ["hello"]);
+      expect(bob.messages).toEqual(["hello"]);
     });
 
     it("does not echo a message back to its sender", async () => {
@@ -94,7 +95,7 @@ describe("relay server", () => {
       await gotMessages(bob, 1);
       await sleep(SETTLE_MS);
 
-      assert.deepEqual(alice.messages, []);
+      expect(alice.messages).toEqual([]);
     });
 
     it("delivers to every other client in the room, not only one", async () => {
@@ -106,8 +107,8 @@ describe("relay server", () => {
       await gotMessages(bob, 1);
       await gotMessages(carol, 1);
 
-      assert.deepEqual(bob.messages, ["hello all"]);
-      assert.deepEqual(carol.messages, ["hello all"]);
+      expect(bob.messages).toEqual(["hello all"]);
+      expect(carol.messages).toEqual(["hello all"]);
     });
 
     it("works in both directions", async () => {
@@ -119,8 +120,8 @@ describe("relay server", () => {
       await gotMessages(alice, 1);
       await gotMessages(bob, 1);
 
-      assert.deepEqual(bob.messages, ["ping"]);
-      assert.deepEqual(alice.messages, ["pong"]);
+      expect(bob.messages).toEqual(["ping"]);
+      expect(alice.messages).toEqual(["pong"]);
     });
 
     it("keeps messages from one sender in the order they were sent", async () => {
@@ -131,7 +132,7 @@ describe("relay server", () => {
       for (const text of sent) alice.send(text);
       await gotMessages(bob, sent.length);
 
-      assert.deepEqual(bob.messages, sent);
+      expect(bob.messages).toEqual(sent);
     });
   });
 
@@ -147,7 +148,7 @@ describe("relay server", () => {
       await gotMessages(bob, 1); // proof the server has handled it
       await sleep(SETTLE_MS);
 
-      assert.deepEqual(carol.messages, []);
+      expect(carol.messages).toEqual([]);
     });
 
     it("lets several rooms talk at the same time without mixing", async () => {
@@ -161,20 +162,20 @@ describe("relay server", () => {
       await gotMessages(a2, 1);
       await gotMessages(b2, 1);
 
-      assert.deepEqual(a2.messages, ["from room1"]);
-      assert.deepEqual(b2.messages, ["from room2"]);
+      expect(a2.messages).toEqual(["from room1"]);
+      expect(b2.messages).toEqual(["from room2"]);
     });
 
     it("creates a room when the first person joins", async () => {
-      assert.equal(server.roomCount(), 0);
+      expect(server.roomCount()).toBe(0);
       await connect("room1");
-      assert.equal(server.roomCount(), 1);
+      expect(server.roomCount()).toBe(1);
     });
 
     it("reuses the same room for later joiners", async () => {
       await connect("room1");
       await connect("room1");
-      assert.equal(server.roomCount(), 1);
+      expect(server.roomCount()).toBe(1);
     });
 
     it("removes a room when its last person leaves (no memory leak)", async () => {
@@ -184,7 +185,7 @@ describe("relay server", () => {
       alice.close();
       await alice.closed();
       await sleep(SETTLE_MS); // give the server time to process the leave
-      assert.equal(server.roomCount(), 1, "room stays while bob is still in it");
+      expect(server.roomCount(), "room stays while bob is still in it").toBe(1);
 
       bob.close();
       await waitFor(() => server.roomCount() === 0, "room to be removed");
@@ -200,7 +201,7 @@ describe("relay server", () => {
       bob.send("back again");
       await gotMessages(carol, 1);
 
-      assert.deepEqual(carol.messages, ["back again"]);
+      expect(carol.messages).toEqual(["back again"]);
     });
   });
 
@@ -220,26 +221,26 @@ describe("relay server", () => {
       it(`rejects ${label} with close code 1008`, async () => {
         const client = await connect(name);
         const { code } = await client.closed();
-        assert.equal(code, 1008);
+        expect(code).toBe(1008);
       });
     }
 
     it("accepts a 64 character name (the limit itself)", async () => {
       const client = await connect("x".repeat(64));
       await sleep(SETTLE_MS);
-      assert.equal(server.roomCount(), 1);
+      expect(server.roomCount()).toBe(1);
       client.close();
     });
 
     it("accepts letters, digits, dash and underscore", async () => {
       await connect("Room_42-b");
-      assert.equal(server.roomCount(), 1);
+      expect(server.roomCount()).toBe(1);
     });
 
     it("does not create a room for a rejected client", async () => {
       const client = await connect("bad%20name");
       await client.closed();
-      assert.equal(server.roomCount(), 0);
+      expect(server.roomCount()).toBe(0);
     });
 
     it("rejected clients do not receive messages from valid rooms", async () => {
@@ -251,7 +252,7 @@ describe("relay server", () => {
       alice.send("secret");
       await gotMessages(bob, 1);
 
-      assert.deepEqual(intruder.messages, []);
+      expect(intruder.messages).toEqual([]);
     });
   });
 
@@ -263,7 +264,7 @@ describe("relay server", () => {
       alice.send("");
       await gotMessages(bob, 1);
 
-      assert.deepEqual(bob.messages, [""]);
+      expect(bob.messages).toEqual([""]);
     });
 
     it("relays a large message (1 MB) unchanged", async () => {
@@ -274,7 +275,7 @@ describe("relay server", () => {
       alice.send(big);
       await gotMessages(bob, 1);
 
-      assert.equal(bob.messages[0], big);
+      expect(bob.messages[0]).toBe(big);
     });
 
     it("keeps working for the others after one client leaves", async () => {
@@ -287,7 +288,7 @@ describe("relay server", () => {
       bob.send("still here");
       await gotMessages(carol, 1);
 
-      assert.deepEqual(carol.messages, ["still here"]);
+      expect(carol.messages).toEqual(["still here"]);
     });
 
     it("lets a client alone in a room send without errors", async () => {
@@ -295,13 +296,13 @@ describe("relay server", () => {
       alice.send("anyone there?");
       await sleep(SETTLE_MS);
 
-      assert.deepEqual(alice.messages, []);
-      assert.equal(server.roomCount(), 1);
+      expect(alice.messages).toEqual([]);
+      expect(server.roomCount()).toBe(1);
     });
 
     it("handles many clients joining and leaving", async () => {
       const crowd = await Promise.all(Array.from({ length: 30 }, () => connect("busy")));
-      assert.equal(server.roomCount(), 1);
+      expect(server.roomCount()).toBe(1);
 
       for (const c of crowd) c.close();
       await waitFor(() => server.roomCount() === 0, "all 30 to leave and the room to be removed");
@@ -311,9 +312,9 @@ describe("relay server", () => {
   // ---------- known gaps: not built yet, tracked here so we don't forget ----------
 
   describe("not built yet", () => {
-    it("detects a client whose connection died silently (heartbeat)", { todo: true });
-    it("rejects messages above a maximum size", { todo: true });
-    it("tells others when someone joins or leaves (presence)", { todo: true });
-    it("lets a disconnected client catch up on what it missed", { todo: true });
+    it.todo("detects a client whose connection died silently (heartbeat)");
+    it.todo("rejects messages above a maximum size");
+    it.todo("tells others when someone joins or leaves (presence)");
+    it.todo("lets a disconnected client catch up on what it missed");
   });
 });

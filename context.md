@@ -5,10 +5,10 @@ How the three files relate:
 | File | Purpose |
 |---|---|
 | `idea.md` | *What* we're building (source of truth for the product) |
-| `CLAUDE.md` | *How* we work (teacher-first loop, first principles, decision log) |
+| `CLAUDE.md` | Working instructions for Claude (commands, stack, workflow). Local only: it is in `.gitignore` |
 | `context.md` (this file) | *Where we are*: what was reasoned, decided and learned, and what's next |
 
-Status: **deep-dive on the idea is done. No code written yet.** Last updated 2026-10-19.
+Status: idea deep-dive done; relay server with rooms built, tested, ready to deploy. Last updated 2026-10-20.
 
 ---
 
@@ -67,28 +67,35 @@ Real-time collaborative code editor. Two (later N) people join a room via a shar
 | **Figma's trick (from memory, unverified)** | Objects have IDs and properties, so edits refer to IDs instead of positions; server order breaks ties |
 | **Reconnect options** | A: send whole text (overwrites, loses work). B: send only changes. C: B plus a marker ("I've seen up to #42; give me everything after"). C includes B. In P2P the marker becomes a version vector |
 
-## 5. Decisions made
+## 5. Decision log
 
-(Authoritative copy is the decision log in `CLAUDE.md`.)
+Moved here from `CLAUDE.md` (which now holds only working instructions). Append one row per decision. Rows marked SUPERSEDED were replaced by the 'Tooling reset'.
 
 | Date | Decision | Why | Rejected |
 |---|---|---|---|
-| 2026-10-18 | Start with 2 users per room, grow to N later | Smallest case with the real problem; to verify at N that more users add scale, not new kinds of problems | Design for N up front |
-| 2026-10-18 | Build an MVP first, keep architecture open | Learn from a running system's limits | Full up-front design |
-| 2026-10-18 | MVP transport: client-server relay | Server needed anyway (introductions, persistence); one place to order and observe | P2P/WebRTC for MVP (revisit later as an experiment) |
-| 2026-10-18 | Local-first typing | Hide the 2-hop delay from the typist | Wait for server confirmation |
-| 2026-10-18 | Reconnect via last-seen marker | Cheap, loses nothing | Send whole text |
-| 2026-10-19 | Sync: borrow a production CRDT library | Merging is a solved problem; effort goes to the layers around it | Own OT-style transform |
-| 2026-10-19 | Library: Yjs | Editor bindings, presence, persistence hooks; JS in browser and server | Automerge, own implementation |
-| 2026-10-19 | Language: TypeScript/Node for client and server | One language on both sides | Other server languages |
+| 2026-10-18 | Start with 2 users per room, grow to N later | Smallest case that still has the real problem (concurrent edits, delay, reorder); more users add scale, not new kinds of problem (to be verified when we reach N) | Designing for N up front (more orderings to reason about before anything works) |
+| 2026-10-18 | Build an MVP first, keep architecture open, improve on top | Learn from a running system's limits instead of guessing them | Full up-front design |
+| 2026-10-18 | MVP transport: client-server relay (not P2P/WebRTC) | A server is unavoidable anyway (introductions, persistence); it also gives one place to order and observe messages | P2P/WebRTC for MVP (adds NAT/TURN plumbing, no central authority); revisit later as an experiment |
+| 2026-10-18 | Local-first typing: show own edit instantly, sync in background | Typist must not feel the 2-hop relay delay (fact 2); cost is that replicas diverge briefly and need merging | Wait for server confirmation before showing (laggy, hides the real problem) |
+| 2026-10-18 | Reconnect: client remembers last seen version, asks server for everything after it | Server's ordered log makes "what did I miss" cheap and loses nothing | Send whole text (overwrites and loses the other side's work) |
+| 2026-10-19 | Sync algorithm: borrow a production-grade CRDT library instead of writing our own transform | Merging is a solved, well-tested problem; our learning effort goes to the layers around it (transport, rooms, persistence, reconnect, presence, fault injection) | Writing our own OT-style transform (more learning on sync, but not where we want to spend effort) |
+| 2026-10-19 | Sync library: Yjs | Editor bindings, presence (awareness), persistence hooks; JavaScript so it runs in browser and server | Automerge, own implementation |
+| 2026-10-19 | Language: TypeScript/Node for client and server | Browser runs JS and Yjs is JS; one language on both sides | Other server languages (would split the codebase in two) |
+| 2026-10-19 | WebSocket protocol: borrow the `ws` library; write relay logic ourselves | Handshake and frame parsing is protocol plumbing with no learning value; the message logic, rooms, heartbeats and failure handling are where the engineering is | Hand-writing the protocol from raw TCP |
+| 2026-10-19 | Native WebSockets, not Socket.IO | We want to build and see heartbeats, reconnect and rooms ourselves; native has less per-message overhead, sends Yjs binary updates directly, and matches Yjs's standard providers | Socket.IO (hides the failure handling we want to learn; revisit as a comparison experiment) |
+| 2026-10-19 | (runner part SUPERSEDED by the tooling reset below; the rest still holds) Automated tests with Node's built-in `node:test` (no browser); one spec file per module; each test gets its own server on a random port; known gaps tracked as `todo` tests | Tests are repeatable, fast (~0.5s) and double as a readable spec; a test is only trusted after we break the code on purpose and watch it fail (mutation check) | Manual browser clicking (not repeatable); Jest/Vitest (extra dependency with no benefit yet) |
+| 2026-10-19 | (SUPERSEDED in part: formatter/linter now added via Biome; Node-native-TS rationale dropped) Minimal scaffolding now: git, `.gitignore`, `.nvmrc` + `engines` (Node >=24), clean `package.json` (`private`), README. Defer formatter/linter, CI, Docker, workspaces, `.env.example` | Each added item must solve a problem we actually have; Node >=24 is required because we run TypeScript without a build tool | Adding the full toolchain up front (premature, hides which tool solves which problem) |
+| 2026-10-19 | Deploy early and often, starting with the current relay | Many small pushes to production are easier to debug than one late big deploy; production-only issues (TLS, idle-connection timeouts, env config, restarts) surface one at a time | Deploying late, once features are "done" |
+| 2026-10-19 | Tooling reset (supersedes the `node:test` and run-TS-natively decisions): Vitest for tests, tsx for dev, tsup (esbuild) to build `dist/` for production, Biome for lint + format, npm for packages | Conventional tools a professional team would use; Vitest has per-test timeouts, watch mode, TS support and will be shared with the Vite web client; a compiled `dist/` is what hosting platforms expect | `node:test`, Node's native TS stripping (fewer deps but extra constraints: `.ts` import extensions, erasable-syntax-only), ESLint+Prettier (two tools instead of one). Deferred: pnpm/workspaces until the web package exists |
+| 2026-10-19 | SUPERSEDED by the tooling reset above: Run TypeScript natively with Node 24 (no build tool), `tsc` for type checks only | Fewer moving parts; Node strips types itself | tsx/ts-node, bundlers (add only when a real need appears) |
 
-**Deferred (decide when it comes up):** database choice (e.g. MongoDB vs others), editor component, whether to try WebRTC later as a transport experiment, whether to read Yjs internals later.
+**Open decisions:** hosting for the first deploy (managed platform recommended); when wiring Yjs, use `y-websocket`'s ready-made server instead of our own relay?
 
 ## 6. Hard parts that remain (even with Yjs)
 
 Yjs merges bytes in memory. Everything else is ours.
 
-| # | Problem | What to break/measure |
+| # | Problem | How to verify |
 |---|---|---|
 | 1 | **Persistence**: when to save, durability vs write load, log growth and compaction | Kill the server mid-typing, then measure loss and growth |
 | 2 | **Reconnect/resync**: duplicate or partial delivery, server restart, long-offline client | Fault-inject disconnects, then check identical docs and time the recovery |
@@ -101,15 +108,16 @@ Yjs merges bytes in memory. Everything else is ours.
 
 Also: collaborative undo/redo (each user undoes only their own edits) is subtle, and it lives in the editor layer.
 
-## 7. Current position and next step
+## 7. Current position and next steps
 
-**Built so far (all in `server/` and `web/`):**
-- `server/src/relay.ts`: WebSocket relay with rooms (room = URL path, name validated, empty rooms removed). `server/src/index.ts` just starts it on port 8080.
-- `server/test/relay.test.ts`: 26 automated tests (happy path, rooms, name validation, edge cases) plus 4 `todo` tests for known gaps (heartbeat, max message size, presence, catch-up). Run with `npm test` in `server/`. Mutation-checked: 4 deliberate bugs were each caught.
+**Built so far (`server/` and `web/`):**
+- `server/src/relay.ts`: WebSocket relay with rooms (room = URL path, name validated, empty rooms removed). `server/src/index.ts` starts it; port comes from `PORT` (default 8080).
+- `server/test/relay.test.ts`: 26 Vitest tests (relaying, rooms, name validation, edge cases) plus 4 `todo` tests for known gaps (heartbeat, max message size, presence, catch-up).
+- Tooling: Vitest, tsx, tsup, Biome, npm. Checks: `npm run typecheck`, `npm run lint`, `npm test`.
 - `web/test.html`: bare manual test page (room in `#hash`), only for eyeballing.
 
-**Testing convention:** every behavior gets a test first or alongside; wait for conditions (never sleep and hope); to prove a message did *not* arrive, wait for a known message then settle briefly.
+**Next (in order):**
+1. **First commit and first deploy** of the relay (managed platform from a private GitHub repo). Waiting on the user: GitHub login for `gh`, and hosting choice.
+2. **Heartbeats**, driven by what the deployed server shows (proxies drop idle connections, dead clients linger in rooms). The `todo` test is the spec.
+3. **Yjs**: decide `y-websocket`'s ready-made server vs our own relay, then wire up the editor client (Vite).
 
-- **Open question for the user:** a client's wifi dies silently with no "goodbye". How does the server tell "not typing" from "gone", and what should the UI show the other user? (Leads to heartbeats and presence.)
-- **Next smallest thing to build:** a Node (TypeScript) WebSocket server plus two browser tabs exchanging messages, with logging of every message and the ability to kill connections, so behavior can be observed before Yjs is wired in.
-- Process reminder: teach the why, let the user reason, check understanding, then build, then show how to break and measure it.
