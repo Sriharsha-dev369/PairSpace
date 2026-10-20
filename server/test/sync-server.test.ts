@@ -2,15 +2,20 @@
 // Every test starts its own server on a random free port, so tests never affect each other.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { WebsocketProvider } from "y-websocket";
+import * as Y from "yjs";
 import { createSyncServer, type SyncServer } from "../src/sync-server";
 
 // ---------- test helpers ----------
 
-interface TestClient {
-  messages: string[]; // everything this client has received, in order
+interface RawClient {
   closed(): Promise<{ code: number; reason: string }>; // fails after 1s if the connection never closes
-  send(text: string): void;
   close(): void;
+}
+
+interface YjsClient {
+  doc: Y.Doc;
+  provider: WebsocketProvider;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -24,31 +29,34 @@ async function waitFor(condition: () => boolean, what: string, timeoutMs = 1000)
   }
 }
 
-// To prove a message did NOT arrive we can't wait for it. Instead we wait for a message we know
-// will arrive, then give the network a short extra moment, then check the other client got nothing.
+// To prove something did NOT happen we can't wait for it. Instead we wait for something we know
+// will happen, then give the network a short extra moment, then check.
 const SETTLE_MS = 50;
 
 describe("sync server", () => {
   let server: SyncServer;
-  let clients: TestClient[];
+  let rawClients: RawClient[];
+  let providers: WebsocketProvider[];
 
   beforeEach(async () => {
     server = await createSyncServer({ port: 0 });
-    clients = [];
+    rawClients = [];
+    providers = [];
   });
 
   afterEach(async () => {
-    for (const c of clients) c.close();
+    for (const c of rawClients) c.close();
+    for (const p of providers) p.destroy();
     await server.close();
   });
 
-  async function connect(room: string): Promise<TestClient> {
+  // a plain WebSocket, for connection-level behavior (validation, room lifecycle)
+  async function connectRaw(room: string): Promise<RawClient> {
     const socket = new WebSocket(`ws://localhost:${server.port}/${room}`);
     const closeEvent = new Promise<{ code: number; reason: string }>((resolve) =>
       socket.addEventListener("close", (e) => resolve({ code: e.code, reason: e.reason })),
     );
-    const client: TestClient = {
-      messages: [],
+    const client: RawClient = {
       // created on demand so a never-awaited rejection can't crash the run
       closed: () =>
         Promise.race([
@@ -57,130 +65,63 @@ describe("sync server", () => {
             throw new Error("the connection was not closed within 1s");
           }),
         ]),
-      send: (text) => socket.send(text),
       close: () => socket.close(),
     };
-    socket.addEventListener("message", (e) => client.messages.push(String(e.data)));
     await new Promise((resolve, reject) => {
       socket.addEventListener("open", resolve, { once: true });
       socket.addEventListener("error", () => reject(new Error("could not connect")), {
         once: true,
       });
     });
-    clients.push(client);
+    rawClients.push(client);
     return client;
   }
 
-  const gotMessages = (client: TestClient, count: number) =>
-    waitFor(() => client.messages.length >= count, `${count} message(s)`);
-
-  // ---------- happy path ----------
-
-  describe("relaying messages", () => {
-    it("delivers a message to the other client in the same room", async () => {
-      const alice = await connect("room1");
-      const bob = await connect("room1");
-
-      alice.send("hello");
-      await gotMessages(bob, 1);
-
-      expect(bob.messages).toEqual(["hello"]);
+  // a real Yjs client, exactly as the browser uses it
+  async function joinRoom(room: string): Promise<YjsClient> {
+    const doc = new Y.Doc();
+    // disableBc: in one process, BroadcastChannel would sync clients directly and bypass the server
+    const provider = new WebsocketProvider(`ws://localhost:${server.port}`, room, doc, {
+      disableBc: true,
     });
+    providers.push(provider);
+    await waitFor(() => provider.synced, `${room} to sync`);
+    return { doc, provider };
+  }
 
-    it("does not echo a message back to its sender", async () => {
-      const alice = await connect("room1");
-      const bob = await connect("room1");
+  const text = (client: YjsClient) => client.doc.getText("probe").toString();
 
-      alice.send("hello");
-      await gotMessages(bob, 1);
-      await sleep(SETTLE_MS);
+  // ---------- syncing documents ----------
 
-      expect(alice.messages).toEqual([]);
-    });
+  describe("syncing documents", () => {
+    it("delivers an edit from one client to another in the same room", async () => {
+      const alice = await joinRoom("room1");
+      const bob = await joinRoom("room1");
 
-    it("delivers to every other client in the room, not only one", async () => {
-      const alice = await connect("room1");
-      const bob = await connect("room1");
-      const carol = await connect("room1");
+      alice.doc.getText("probe").insert(0, "hello");
 
-      alice.send("hello all");
-      await gotMessages(bob, 1);
-      await gotMessages(carol, 1);
-
-      expect(bob.messages).toEqual(["hello all"]);
-      expect(carol.messages).toEqual(["hello all"]);
-    });
-
-    it("works in both directions", async () => {
-      const alice = await connect("room1");
-      const bob = await connect("room1");
-
-      alice.send("ping");
-      bob.send("pong");
-      await gotMessages(alice, 1);
-      await gotMessages(bob, 1);
-
-      expect(bob.messages).toEqual(["ping"]);
-      expect(alice.messages).toEqual(["pong"]);
-    });
-
-    it("keeps messages from one sender in the order they were sent", async () => {
-      const alice = await connect("room1");
-      const bob = await connect("room1");
-      const sent = Array.from({ length: 50 }, (_, i) => `msg-${i}`);
-
-      for (const text of sent) alice.send(text);
-      await gotMessages(bob, sent.length);
-
-      expect(bob.messages).toEqual(sent);
+      await waitFor(() => text(bob) === "hello", "bob to see alice's edit");
     });
   });
 
   // ---------- rooms ----------
 
-  describe("rooms", () => {
-    it("never delivers messages across different rooms", async () => {
-      const alice = await connect("room1");
-      const bob = await connect("room1");
-      const carol = await connect("room2");
-
-      alice.send("only for room1");
-      await gotMessages(bob, 1); // proof the server has handled it
-      await sleep(SETTLE_MS);
-
-      expect(carol.messages).toEqual([]);
-    });
-
-    it("lets several rooms talk at the same time without mixing", async () => {
-      const a1 = await connect("room1");
-      const a2 = await connect("room1");
-      const b1 = await connect("room2");
-      const b2 = await connect("room2");
-
-      a1.send("from room1");
-      b1.send("from room2");
-      await gotMessages(a2, 1);
-      await gotMessages(b2, 1);
-
-      expect(a2.messages).toEqual(["from room1"]);
-      expect(b2.messages).toEqual(["from room2"]);
-    });
-
+  describe("room lifecycle", () => {
     it("creates a room when the first person joins", async () => {
       expect(server.roomCount()).toBe(0);
-      await connect("room1");
+      await connectRaw("room1");
       expect(server.roomCount()).toBe(1);
     });
 
     it("reuses the same room for later joiners", async () => {
-      await connect("room1");
-      await connect("room1");
+      await connectRaw("room1");
+      await connectRaw("room1");
       expect(server.roomCount()).toBe(1);
     });
 
     it("removes a room when its last person leaves (no memory leak)", async () => {
-      const alice = await connect("room1");
-      const bob = await connect("room1");
+      const alice = await connectRaw("room1");
+      const bob = await connectRaw("room1");
 
       alice.close();
       await alice.closed();
@@ -191,21 +132,16 @@ describe("sync server", () => {
       await waitFor(() => server.roomCount() === 0, "room to be removed");
     });
 
-    it("lets people rejoin a room after it was removed", async () => {
-      const alice = await connect("room1");
-      alice.close();
-      await waitFor(() => server.roomCount() === 0, "room to be removed");
+    it("handles many clients joining and leaving", async () => {
+      const crowd = await Promise.all(Array.from({ length: 30 }, () => connectRaw("busy")));
+      expect(server.roomCount()).toBe(1);
 
-      const bob = await connect("room1");
-      const carol = await connect("room1");
-      bob.send("back again");
-      await gotMessages(carol, 1);
-
-      expect(carol.messages).toEqual(["back again"]);
+      for (const c of crowd) c.close();
+      await waitFor(() => server.roomCount() === 0, "all 30 to leave and the room to be removed");
     });
   });
 
-  // ---------- edge cases ----------
+  // ---------- room name validation ----------
 
   describe("room name validation", () => {
     const badNames: [string, string][] = [
@@ -219,93 +155,27 @@ describe("sync server", () => {
 
     for (const [label, name] of badNames) {
       it(`rejects ${label} with close code 1008`, async () => {
-        const client = await connect(name);
+        const client = await connectRaw(name);
         const { code } = await client.closed();
         expect(code).toBe(1008);
       });
     }
 
     it("accepts a 64 character name (the limit itself)", async () => {
-      const client = await connect("x".repeat(64));
+      await connectRaw("x".repeat(64));
       await sleep(SETTLE_MS);
       expect(server.roomCount()).toBe(1);
-      client.close();
     });
 
     it("accepts letters, digits, dash and underscore", async () => {
-      await connect("Room_42-b");
+      await connectRaw("Room_42-b");
       expect(server.roomCount()).toBe(1);
     });
 
     it("does not create a room for a rejected client", async () => {
-      const client = await connect("bad%20name");
+      const client = await connectRaw("bad%20name");
       await client.closed();
       expect(server.roomCount()).toBe(0);
-    });
-
-    it("rejected clients do not receive messages from valid rooms", async () => {
-      const alice = await connect("room1");
-      const bob = await connect("room1");
-      const intruder = await connect("bad%20name");
-      await intruder.closed();
-
-      alice.send("secret");
-      await gotMessages(bob, 1);
-
-      expect(intruder.messages).toEqual([]);
-    });
-  });
-
-  describe("unusual traffic and disconnects", () => {
-    it("relays an empty message", async () => {
-      const alice = await connect("room1");
-      const bob = await connect("room1");
-
-      alice.send("");
-      await gotMessages(bob, 1);
-
-      expect(bob.messages).toEqual([""]);
-    });
-
-    it("relays a large message (1 MB) unchanged", async () => {
-      const alice = await connect("room1");
-      const bob = await connect("room1");
-      const big = "a".repeat(1_000_000);
-
-      alice.send(big);
-      await gotMessages(bob, 1);
-
-      expect(bob.messages[0]).toBe(big);
-    });
-
-    it("keeps working for the others after one client leaves", async () => {
-      const alice = await connect("room1");
-      const bob = await connect("room1");
-      const carol = await connect("room1");
-
-      alice.close();
-      await alice.closed();
-      bob.send("still here");
-      await gotMessages(carol, 1);
-
-      expect(carol.messages).toEqual(["still here"]);
-    });
-
-    it("lets a client alone in a room send without errors", async () => {
-      const alice = await connect("room1");
-      alice.send("anyone there?");
-      await sleep(SETTLE_MS);
-
-      expect(alice.messages).toEqual([]);
-      expect(server.roomCount()).toBe(1);
-    });
-
-    it("handles many clients joining and leaving", async () => {
-      const crowd = await Promise.all(Array.from({ length: 30 }, () => connect("busy")));
-      expect(server.roomCount()).toBe(1);
-
-      for (const c of crowd) c.close();
-      await waitFor(() => server.roomCount() === 0, "all 30 to leave and the room to be removed");
     });
   });
 
@@ -314,7 +184,6 @@ describe("sync server", () => {
   describe("not built yet", () => {
     it.todo("detects a client whose connection died silently (heartbeat)");
     it.todo("rejects messages above a maximum size");
-    it.todo("tells others when someone joins or leaves (presence)");
     it.todo("lets a disconnected client catch up on what it missed");
   });
 });
