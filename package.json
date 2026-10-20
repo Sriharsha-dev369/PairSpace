@@ -1,0 +1,20 @@
+{
+  "name": "pairspace",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server"
+  ],
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "biome check .",
+    "format": "biome check --write ."
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15"
+  }
+}

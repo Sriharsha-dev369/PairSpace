@@ -8,16 +8,13 @@
     "typecheck": "tsc --noEmit",
     "build": "tsup src/index.ts --format esm --target node24 --clean",
     "start": "node dist/index.js",
-    "test:watch": "vitest",
-    "lint": "biome check .",
-    "format": "biome check --write ."
+    "test:watch": "vitest"
   },
   "type": "module",
   "dependencies": {
     "ws": "^8.22.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.15",
     "@types/node": "^26.6.5",
     "@types/ws": "^8.18.2",
     "tsup": "^9.0.0",
