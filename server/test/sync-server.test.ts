@@ -172,6 +172,17 @@ describe("sync server", () => {
 
       await waitFor(() => sees(bob, "Alice"), "bob to see alice's presence");
     });
+
+    it("shows a newcomer the people who were already in the room", async () => {
+      const alice = await joinRoom("room1");
+      const carol = await joinRoom("room1");
+      alice.provider.awareness.setLocalStateField("user", { name: "Alice" });
+      await waitFor(() => sees(carol, "Alice"), "the server to know about alice");
+
+      const bob = await joinRoom("room1");
+
+      await waitFor(() => sees(bob, "Alice"), "bob to see alice, who was there first");
+    });
   });
 
   // ---------- the room's files ----------

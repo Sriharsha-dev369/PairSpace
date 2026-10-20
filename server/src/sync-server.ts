@@ -42,6 +42,16 @@ function syncMessage(write: (encoder: encoding.Encoder) => void): Uint8Array {
   return encoding.toUint8Array(encoder);
 }
 
+function awarenessMessage(awareness: awarenessProtocol.Awareness, clientIds: number[]) {
+  const encoder = encoding.createEncoder();
+  encoding.writeVarUint(encoder, MESSAGE_AWARENESS);
+  encoding.writeVarUint8Array(
+    encoder,
+    awarenessProtocol.encodeAwarenessUpdate(awareness, clientIds),
+  );
+  return encoding.toUint8Array(encoder);
+}
+
 export function createSyncServer({ port, log = () => {} }: Options): Promise<SyncServer> {
   const wss = new WebSocketServer({ port });
   const rooms = new Map<string, Room>();
@@ -75,14 +85,7 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
     });
 
     awareness.on("update", ({ added, updated, removed }: AwarenessChanges, origin: unknown) => {
-      const changed = [...added, ...updated, ...removed];
-      const encoder = encoding.createEncoder();
-      encoding.writeVarUint(encoder, MESSAGE_AWARENESS);
-      encoding.writeVarUint8Array(
-        encoder,
-        awarenessProtocol.encodeAwarenessUpdate(awareness, changed),
-      );
-      broadcast(room, encoding.toUint8Array(encoder), origin);
+      broadcast(room, awarenessMessage(awareness, [...added, ...updated, ...removed]), origin);
     });
 
     rooms.set(name, room);
@@ -113,6 +116,10 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
 
     // start the handshake: tell the client what the server already has
     socket.send(syncMessage((e) => syncProtocol.writeSyncStep1(e, doc)));
+
+    // and who is already here (clients don't ask for it)
+    const present = [...awareness.getStates().keys()];
+    if (present.length > 0) socket.send(awarenessMessage(awareness, present));
 
     socket.on("message", (data) => {
       const decoder = decoding.createDecoder(new Uint8Array(data as ArrayBuffer));
