@@ -8,7 +8,42 @@ How the three files relate:
 | `CLAUDE.md` | Working instructions for Claude (commands, stack, workflow). Local only: it is in `.gitignore` |
 | `context.md` (this file) | *Where we are*: what was reasoned, decided and learned, and what's next |
 
-Status: idea deep-dive done; relay server with rooms built, tested, ready to deploy. Last updated 2026-10-20.
+Status: idea deep-dive done; relay server with rooms built and tested (not deployed). Working toward the Phase 1 MVP. Last updated 2026-10-20.
+
+---
+
+## Project goals
+
+PairSpace is a **full-stack project with a distributed-systems core**, built in two phases.
+
+| | Phase 1: MVP | Phase 2: Distributed systems |
+|---|---|---|
+| **What** | The complete full-stack working model: frontend, backend, auth, database, and the real-time collaborative editor, everything working end to end. Learning-specific | Make it production-ready and battle-tested |
+| **Bar** | When someone clicks the invite link, they should be **amazed**: it feels polished and instant, not like a demo | **Benchmarks we can show on a resume**, backed by real measurements |
+| **Includes** | Rooms and invite links, in-browser code execution, live shared editing, cursors/presence, accounts (auth), saved documents (database), UI quality | Benchmarks for latency, scaling, delayed/unreliable networks, and concurrent changes; **server-side code execution** through an existing sandbox engine (e.g. Judge0 or Piston; check availability and terms), benchmarked for queue latency, concurrent executions and timeouts (and more as questions arise, e.g. reconnect recovery, persistence durability) |
+| **Deploy** | **When the MVP is built** (not before) | Hardening and load testing against the deployed system |
+
+### MVP scope: final product view (decided 2026-10-20)
+
+```
+Landing ──► Sign in ──► Dashboard ──► Room (editor + side panels)
+```
+
+| Page / feature | Details |
+|---|---|
+| **Landing** | Pitch, "Create a room", animated live demo; the "amazed" first impression |
+| **Auth** | Email and GitHub sign-in; users and sessions in the database |
+| **Dashboard** | My rooms and recent rooms; create, rename, delete, join by link |
+| **Room (editor)** | Live co-editing, cursors, who's online, connection status, language picker, auto-save |
+| **Multi-file projects** | A room holds many files: file tree, tabs, create / rename / delete. Data model is "a room has many files" from day one; build one file first, then the tree. New concurrency case: one person edits a file while another deletes or renames it |
+| **In-browser Run** | A Run button for JavaScript (sandboxed Web Worker/iframe) and Python (Pyodide, Python compiled to run in the browser). One person presses Run, and the output panel is shared with everyone in the room. The browser sandbox keeps our servers safe |
+| **Share-link roles** | Invite as editor or view-only; revoke the link. Enforced on every WebSocket connection |
+| **Session replay** | Time-travel slider replaying how the code was written, colour per person. Built on the saved edit history |
+| **Sync inspector + bad-network toggle** | Live panel: latency, pending updates, connection state; a switch to add delay or go offline and watch both editors still converge. Feeds the Phase 2 benchmarks |
+
+**Out of scope for the MVP:** video chat, text chat, server-side code execution (moves to Phase 2). If video is wanted after Phase 1, use an existing hosted video/voice component instead of building WebRTC ourselves. May be revisited after the MVP.
+
+The line between phases: Phase 1 proves it works; Phase 2 proves it holds up, with numbers.
 
 ---
 
@@ -85,11 +120,15 @@ Moved here from `CLAUDE.md` (which now holds only working instructions). Append 
 | 2026-10-19 | Native WebSockets, not Socket.IO | We want to build and see heartbeats, reconnect and rooms ourselves; native has less per-message overhead, sends Yjs binary updates directly, and matches Yjs's standard providers | Socket.IO (hides the failure handling we want to learn; revisit as a comparison experiment) |
 | 2026-10-19 | (runner part SUPERSEDED by the tooling reset below; the rest still holds) Automated tests with Node's built-in `node:test` (no browser); one spec file per module; each test gets its own server on a random port; known gaps tracked as `todo` tests | Tests are repeatable, fast (~0.5s) and double as a readable spec; a test is only trusted after we break the code on purpose and watch it fail (mutation check) | Manual browser clicking (not repeatable); Jest/Vitest (extra dependency with no benefit yet) |
 | 2026-10-19 | (SUPERSEDED in part: formatter/linter now added via Biome; Node-native-TS rationale dropped) Minimal scaffolding now: git, `.gitignore`, `.nvmrc` + `engines` (Node >=24), clean `package.json` (`private`), README. Defer formatter/linter, CI, Docker, workspaces, `.env.example` | Each added item must solve a problem we actually have; Node >=24 is required because we run TypeScript without a build tool | Adding the full toolchain up front (premature, hides which tool solves which problem) |
-| 2026-10-19 | Deploy early and often, starting with the current relay | Many small pushes to production are easier to debug than one late big deploy; production-only issues (TLS, idle-connection timeouts, env config, restarts) surface one at a time | Deploying late, once features are "done" |
+| 2026-10-19 | SUPERSEDED 2026-10-20 (deploy at MVP instead, see last row): Deploy early and often, starting with the current relay | Many small pushes to production are easier to debug than one late big deploy; production-only issues (TLS, idle-connection timeouts, env config, restarts) surface one at a time | Deploying late, once features are "done" |
 | 2026-10-19 | Tooling reset (supersedes the `node:test` and run-TS-natively decisions): Vitest for tests, tsx for dev, tsup (esbuild) to build `dist/` for production, Biome for lint + format, npm for packages | Conventional tools a professional team would use; Vitest has per-test timeouts, watch mode, TS support and will be shared with the Vite web client; a compiled `dist/` is what hosting platforms expect | `node:test`, Node's native TS stripping (fewer deps but extra constraints: `.ts` import extensions, erasable-syntax-only), ESLint+Prettier (two tools instead of one). Deferred: pnpm/workspaces until the web package exists |
 | 2026-10-19 | SUPERSEDED by the tooling reset above: Run TypeScript natively with Node 24 (no build tool), `tsc` for type checks only | Fewer moving parts; Node strips types itself | tsx/ts-node, bundlers (add only when a real need appears) |
+| 2026-10-20 | Deploy when the MVP (complete full-stack working model) is built, not before. Phase 2 (production-ready, battle-tested, benchmarks for the resume) comes after | The user's call on scope and timing: first a complete working product, then hardening with real numbers | Deploying the bare relay now (earlier decision) |
+| 2026-10-20 | MVP scope: landing, auth (email + GitHub), dashboard, room editor, edit/view-only share links, session replay, sync inspector with bad-network toggle. Out: run-code, multi-file, chat, video | "Just an editor" is too thin for a full-stack project; replay and the inspector are distinctive and reuse the data and measurements the distributed-systems phase needs | Editor only (2 pages); run-code; multi-file projects |
+| 2026-10-20 | Amend MVP scope: add multi-file projects; skip video chat | Multi-file makes it feel like a real editor and adds a benchmark dimension (files per room) plus a new concurrency case (edit vs delete/rename). Video adds nothing to the sync story and is a separate domain | Single file per room; video chat now (revisit later with a hosted component, not custom WebRTC) |
+| 2026-10-20 | Add in-browser code execution (JS + Python) to the MVP; server-side execution goes to Phase 2 | A code editor that can't run code feels pointless. In-browser is cheap and safe (browser sandbox); server-side needs real isolation, a queue and workers, which suits the Phase 2 scaling benchmarks | No execution at all; server-side execution in the MVP (security and infra too heavy); custom container isolation (use an existing engine) |
 
-**Open decisions:** hosting for the first deploy (managed platform recommended); when wiring Yjs, use `y-websocket`'s ready-made server instead of our own relay?
+**Open decisions:** hosting (decide when the MVP is ready; a managed platform was the recommendation); when wiring Yjs, use `y-websocket`'s ready-made server instead of our own relay?
 
 ## 6. Hard parts that remain (even with Yjs)
 
@@ -114,10 +153,10 @@ Also: collaborative undo/redo (each user undoes only their own edits) is subtle,
 - `server/src/relay.ts`: WebSocket relay with rooms (room = URL path, name validated, empty rooms removed). `server/src/index.ts` starts it; port comes from `PORT` (default 8080).
 - `server/test/relay.test.ts`: 26 Vitest tests (relaying, rooms, name validation, edge cases) plus 4 `todo` tests for known gaps (heartbeat, max message size, presence, catch-up).
 - Tooling: Vitest, tsx, tsup, Biome, npm. Checks: `npm run typecheck`, `npm run lint`, `npm test`.
-- `web/test.html`: bare manual test page (room in `#hash`), only for eyeballing.
+- `web/test.html`: bare manual test page, only for eyeballing.
+- Not deployed (deploy happens when the MVP is built).
 
-**Next (in order):**
-1. **First commit and first deploy** of the relay (managed platform from a private GitHub repo). Waiting on the user: GitHub login for `gh`, and hosting choice.
-2. **Heartbeats**, driven by what the deployed server shows (proxies drop idle connections, dead clients linger in rooms). The `todo` test is the spec.
-3. **Yjs**: decide `y-websocket`'s ready-made server vs our own relay, then wire up the editor client (Vite).
+**MVP still needs (Phase 1):** a real frontend with a code editor, Yjs-based collaborative editing (incl. deciding `y-websocket`'s ready-made server vs our own relay), presence/cursors with heartbeats, auth, a database with saved documents, reconnect handling, and the polish that makes the first click impressive.
+
+**Roadmap:** `ROADMAP.md` (M0 to M11). **Next: M1**, the core vertical slice, a Vite frontend with an editor wired to Yjs through the relay, so two browsers genuinely co-edit. Auth, database and presence all hang off a working editor. (Proposal, not yet agreed.)
 

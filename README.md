@@ -5,6 +5,13 @@ multiple people edit one document at the same time over an unreliable network.
 
 - `idea.md`: what we're building and why
 - `context.md`: reasoning so far, concepts, and the decision log
+- `ROADMAP.md`: Phase 1 milestones in order
+
+## Goals
+
+A full-stack collaborative editor (frontend, backend, auth, database) with a distributed-systems core.
+Phase 1: a complete, polished MVP. Phase 2: production-ready, with benchmarks for latency, scaling,
+delayed networks and concurrent changes.
 
 ## Status
 
