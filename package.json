@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "server"
+    "server",
+    "web"
   ],
   "scripts": {
     "test": "npm test --workspaces --if-present",
