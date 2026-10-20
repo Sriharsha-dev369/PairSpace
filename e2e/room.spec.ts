@@ -45,3 +45,15 @@ test("shows the connection status and who else is in the room", async ({ browser
   await expect(alice.getByTestId("connection-status")).toHaveText("Connected");
   await expect(bob.getByTestId("other-person")).toHaveText([aliceName]);
 });
+
+test("shows the other person's cursor labelled with their name", async ({ browser }) => {
+  const url = await newRoomUrl(browser);
+  const alice = await openRoomAs(browser, url);
+  const bob = await openRoomAs(browser, url);
+  const aliceName = await alice.getByTestId("my-name").innerText();
+
+  await alice.locator(".cm-content").click();
+  await alice.keyboard.type("x");
+
+  await expect(bob.locator(".cm-ySelectionInfo")).toHaveText(aliceName);
+});
