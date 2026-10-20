@@ -10,6 +10,7 @@ import { createSyncServer, type SyncServer } from "../src/sync-server";
 
 interface RawClient {
   closed(): Promise<{ code: number; reason: string }>; // fails after 1s if the connection never closes
+  send(bytes: Uint8Array<ArrayBuffer>): void;
   close(): void;
 }
 
@@ -74,6 +75,7 @@ describe("sync server", () => {
             throw new Error("the connection was not closed within 1s");
           }),
         ]),
+      send: (bytes) => socket.send(bytes),
       close: () => socket.close(),
     };
     await new Promise((resolve, reject) => {
@@ -303,6 +305,23 @@ describe("sync server", () => {
       const client = await connectRaw("bad%20name");
       await client.closed();
       expect(server.roomCount()).toBe(0);
+    });
+  });
+
+  // ---------- bad input ----------
+
+  describe("bad input", () => {
+    it("disconnects a client that sends a malformed message, and the room carries on", async () => {
+      const alice = await joinRoom("room1");
+      const bob = await joinRoom("room1");
+      const broken = await connectRaw("room1");
+
+      // "sync" message type, then a length prefix that claims far more bytes than follow
+      broken.send(new Uint8Array([0, 0, 0xff, 0xff, 0xff, 0x0f]));
+
+      expect((await broken.closed()).code).toBe(1007);
+      alice.doc.getText("probe").insert(0, "still working");
+      await waitFor(() => text(bob) === "still working", "bob to keep receiving edits");
     });
   });
 

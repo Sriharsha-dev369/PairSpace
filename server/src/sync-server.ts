@@ -35,6 +35,7 @@ const MESSAGE_AWARENESS = 1;
 
 // y-websocket clients never retry after a close code in 4400-4499, so permanent rejections use it
 const CLOSE_INVALID_ROOM = 4400;
+const CLOSE_MALFORMED = 1007; // standard WebSocket code for "invalid payload data"
 
 // the room name comes from the URL, which the client controls, so restrict it
 const ROOM_NAME = /^[A-Za-z0-9_-]{1,64}$/;
@@ -133,22 +134,28 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
     if (present.length > 0) socket.send(awarenessMessage(awareness, present));
 
     socket.on("message", (data) => {
-      const decoder = decoding.createDecoder(new Uint8Array(data as ArrayBuffer));
-      switch (decoding.readVarUint(decoder)) {
-        case MESSAGE_SYNC: {
-          const reply = encoding.createEncoder();
-          encoding.writeVarUint(reply, MESSAGE_SYNC);
-          syncProtocol.readSyncMessage(decoder, reply, doc, socket);
-          if (encoding.length(reply) > 1) socket.send(encoding.toUint8Array(reply));
-          break;
+      // a thrown error here would be uncaught and crash the whole server, so contain it
+      try {
+        const decoder = decoding.createDecoder(new Uint8Array(data as ArrayBuffer));
+        switch (decoding.readVarUint(decoder)) {
+          case MESSAGE_SYNC: {
+            const reply = encoding.createEncoder();
+            encoding.writeVarUint(reply, MESSAGE_SYNC);
+            syncProtocol.readSyncMessage(decoder, reply, doc, socket);
+            if (encoding.length(reply) > 1) socket.send(encoding.toUint8Array(reply));
+            break;
+          }
+          case MESSAGE_AWARENESS:
+            awarenessProtocol.applyAwarenessUpdate(
+              awareness,
+              decoding.readVarUint8Array(decoder),
+              socket,
+            );
+            break;
         }
-        case MESSAGE_AWARENESS:
-          awarenessProtocol.applyAwarenessUpdate(
-            awareness,
-            decoding.readVarUint8Array(decoder),
-            socket,
-          );
-          break;
+      } catch (err) {
+        say(`malformed message, disconnecting: ${(err as Error).message}`);
+        socket.close(CLOSE_MALFORMED, "malformed message");
       }
     });
 
