@@ -33,6 +33,9 @@ interface AwarenessChanges {
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
 
+// y-websocket clients never retry after a close code in 4400-4499, so permanent rejections use it
+const CLOSE_INVALID_ROOM = 4400;
+
 // the room name comes from the URL, which the client controls, so restrict it
 const ROOM_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -108,7 +111,7 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
     const name = new URL(req.url ?? "/", "http://localhost").pathname.slice(1);
     if (!ROOM_NAME.test(name)) {
       say(`rejected, bad room name`);
-      socket.close(1008, "invalid room name");
+      socket.close(CLOSE_INVALID_ROOM, "invalid room name");
       return;
     }
 

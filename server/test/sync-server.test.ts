@@ -267,12 +267,26 @@ describe("sync server", () => {
     ];
 
     for (const [label, name] of badNames) {
-      it(`rejects ${label} with close code 1008`, async () => {
+      it(`rejects ${label} with close code 4400`, async () => {
         const client = await connectRaw(name);
         const { code } = await client.closed();
-        expect(code).toBe(1008);
+        expect(code).toBe(4400);
       });
     }
+
+    it("tells a rejected client not to keep retrying", async () => {
+      const provider = new WebsocketProvider(`ws://localhost:${server.port}`, "a.b", new Y.Doc(), {
+        disableBc: true,
+      });
+      providers.push(provider);
+      let closes = 0;
+      provider.on("connection-close", () => closes++);
+
+      await waitFor(() => closes >= 1, "the first rejection");
+      await sleep(600); // longer than the provider's first reconnect delay (200ms)
+
+      expect(closes).toBe(1);
+    });
 
     it("accepts a 64 character name (the limit itself)", async () => {
       await connectRaw("x".repeat(64));
