@@ -104,6 +104,24 @@ describe("sync server", () => {
     });
   });
 
+  // ---------- the room's files ----------
+
+  describe("room files", () => {
+    // if clients created the first file, two people opening a new room at the same moment
+    // would each create one, and the shared map would silently keep only one of them
+    it("starts a new room with exactly one file, even when two people join at once", async () => {
+      const [alice, bob] = await Promise.all([joinRoom("fresh"), joinRoom("fresh")]);
+
+      const filesOf = (c: YjsClient) => c.doc.getMap<Y.Map<unknown>>("files");
+      expect(filesOf(alice).size).toBe(1);
+      expect([...filesOf(bob).keys()]).toEqual([...filesOf(alice).keys()]);
+
+      const [file] = filesOf(alice).values();
+      expect(file.get("name")).toBe("main.js");
+      expect(file.get("content")).toBeInstanceOf(Y.Text);
+    });
+  });
+
   // ---------- rooms ----------
 
   describe("room lifecycle", () => {

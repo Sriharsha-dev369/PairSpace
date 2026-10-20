@@ -42,6 +42,12 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
     const doc = new Y.Doc();
     const room: Room = { doc, conns: new Set() };
 
+    // the server creates the first file: if clients did, two joining at once would race
+    const file = new Y.Map<unknown>();
+    file.set("name", "main.js");
+    file.set("content", new Y.Text());
+    doc.getMap("files").set(crypto.randomUUID(), file);
+
     // forward every change to everyone in the room except the connection it came from
     doc.on("update", (update: Uint8Array, origin: unknown) => {
       const message = syncMessage((e) => syncProtocol.writeUpdate(e, update));
