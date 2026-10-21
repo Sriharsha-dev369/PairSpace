@@ -23,7 +23,7 @@ export interface RoomFile {
 export interface RoomSession {
   doc: Y.Doc;
   awareness: Awareness;
-  synced: Promise<void>; // resolves once the server's copy of the room has been received
+  synced: Promise<void>; // resolves once the server's copy arrives; rejects if the room is refused
   status(): ConnectionStatus;
   subscribe(listener: () => void): () => void; // called when status, people or files may have changed
   people(): Person[];
@@ -53,10 +53,15 @@ export function joinRoom({ serverUrl, room, user }: JoinOptions): RoomSession {
   provider.on("status", notify);
   awareness.on("change", notify);
 
-  const synced = new Promise<void>((resolve) => {
+  const synced = new Promise<void>((resolve, reject) => {
     if (provider.synced) resolve();
     else provider.once("sync", () => resolve());
+    // "closed" means the server refused us for good (e.g. a bad room name); it won't retry
+    provider.once("closed", ({ reason }) =>
+      reject(new Error(`the server refused this room: ${reason}`)),
+    );
   });
+  synced.catch(() => {}); // a caller that never awaits synced shouldn't see an unhandled rejection
 
   return {
     doc,

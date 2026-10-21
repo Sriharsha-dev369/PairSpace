@@ -48,6 +48,12 @@ describe("room session", () => {
     expect(session.files().map((f) => f.name)).toEqual(["main.js"]);
   });
 
+  it("fails to sync when the server refuses the room name", async () => {
+    const session = join("not.a.valid.room");
+
+    await expect(session.synced).rejects.toThrow("room");
+  });
+
   it("tells the UI when the connection drops", async () => {
     const session = join();
     await session.synced;
