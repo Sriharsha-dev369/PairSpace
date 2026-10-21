@@ -7,9 +7,10 @@ import { useEffect, useRef } from "react";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { cursorLabels } from "./cursorLabels";
 import type { RoomFile } from "./session";
 
-// layered on top of oneDark: our colours and fonts, and always-visible name labels sitting exactly on cursors
+// layered on top of oneDark: our colours and fonts, and name labels sitting exactly on cursors
 const theme = EditorView.theme(
   {
     "&": { height: "100%", fontSize: "13.5px", backgroundColor: "var(--color-canvas)" },
@@ -28,8 +29,9 @@ const theme = EditorView.theme(
     ".cm-ySelectionCaret": { display: "inline-block", height: "1lh", verticalAlign: "top" },
     ".cm-ySelectionCaretDot": { display: "none" }, // the label already marks the cursor; the dot only flickered
     ".cm-ySelectionInfo": {
-      opacity: "1",
-      transition: "none",
+      opacity: "0",
+      transition: "opacity 0.3s ease",
+      pointerEvents: "none", // an invisible label must not swallow clicks on the code under it
       top: "-15px",
       height: "15px",
       lineHeight: "15px",
@@ -39,6 +41,9 @@ const theme = EditorView.theme(
       fontSize: "10.5px",
       fontWeight: "600",
       color: "var(--color-canvas)",
+    },
+    ".cm-yActive > .cm-ySelectionInfo, .cm-ySelectionCaret:hover > .cm-ySelectionInfo": {
+      opacity: "1",
     },
   },
   { dark: true },
@@ -68,6 +73,7 @@ export function Editor({ file, awareness }: Props) {
           theme, // before oneDark: earlier extensions take precedence
           oneDark,
           yCollab(file.content, awareness, { undoManager }),
+          cursorLabels(awareness),
         ],
       }),
     });
