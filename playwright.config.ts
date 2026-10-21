@@ -7,6 +7,8 @@ const WEB_PORT = 5190;
 export default defineConfig({
   testDir: "e2e",
   fullyParallel: true,
+  // a stray test.only would silently skip every other test in CI
+  forbidOnly: !!process.env.CI,
   use: { baseURL: `http://localhost:${WEB_PORT}`, trace: "retain-on-failure" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [

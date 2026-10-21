@@ -1,5 +1,7 @@
 # PairSpace
 
+[![CI](https://github.com/Sriharsha-dev369/PairSpace/actions/workflows/ci.yml/badge.svg)](https://github.com/Sriharsha-dev369/PairSpace/actions/workflows/ci.yml)
+
 Real-time collaborative code editor, built as a learning project in distributed systems:
 multiple people edit one document at the same time over an unreliable network.
 
@@ -30,5 +32,9 @@ npm run dev -w web      # web app on http://localhost:5173
 npm test                # all automated tests (Vitest)
 npm run typecheck       # TypeScript check, all packages
 npm run lint            # Biome check; npm run format to fix
+npm run test:e2e        # browser tests (Playwright; first time: npx playwright install chromium)
+npm run build           # production build, all packages
 npm run build -w server && npm start -w server   # compiled server
 ```
+
+CI (GitHub Actions, `.github/workflows/ci.yml`) runs the same checks on every push to `main` and every pull request.
