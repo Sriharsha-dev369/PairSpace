@@ -218,6 +218,20 @@ describe("sync server", () => {
       expect(file.get("name")).toBe("main.js");
       expect(file.get("content")).toBeInstanceOf(Y.Text);
     });
+
+    it("keeps one file when the only person in a room drops and reconnects", async () => {
+      const alice = await joinRoom("solo");
+      const files = alice.doc.getMap<Y.Map<unknown>>("files");
+      const fileIds = [...files.keys()];
+      alice.provider.ws?.close(); // a network blip; the provider reconnects by itself
+
+      await waitFor(() => !alice.provider.wsconnected, "alice to drop");
+      await waitFor(() => alice.provider.wsconnected && alice.provider.synced, "alice to resync");
+
+      const bob = await joinRoom("solo");
+      expect([...bob.doc.getMap("files").keys()]).toEqual(fileIds);
+      expect([...files.keys()]).toEqual(fileIds);
+    });
   });
 
   // ---------- rooms ----------
@@ -235,25 +249,14 @@ describe("sync server", () => {
       expect(server.roomCount()).toBe(1);
     });
 
-    it("removes a room when its last person leaves (no memory leak)", async () => {
-      const alice = await connectRaw("room1");
-      const bob = await connectRaw("room1");
-
-      alice.close();
-      await alice.closed();
-      await sleep(SETTLE_MS); // give the server time to process the leave
-      expect(server.roomCount(), "room stays while bob is still in it").toBe(1);
-
-      bob.close();
-      await waitFor(() => server.roomCount() === 0, "room to be removed");
-    });
-
     it("handles many clients joining and leaving", async () => {
       const crowd = await Promise.all(Array.from({ length: 30 }, () => connectRaw("busy")));
       expect(server.roomCount()).toBe(1);
 
       for (const c of crowd) c.close();
-      await waitFor(() => server.roomCount() === 0, "all 30 to leave and the room to be removed");
+      await Promise.all(crowd.map((c) => c.closed()));
+      await sleep(SETTLE_MS);
+      expect(server.roomCount(), "an empty room stays loaded until it can be saved").toBe(1);
     });
   });
 
@@ -331,5 +334,6 @@ describe("sync server", () => {
     it.todo("detects a client whose connection died silently (heartbeat)");
     it.todo("rejects messages above a maximum size");
     it.todo("lets a disconnected client catch up on what it missed");
+    it.todo("unloads an empty room once its document is saved (M3)");
   });
 });

@@ -169,14 +169,7 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
       if (owned && owned.size > 0) {
         awarenessProtocol.removeAwarenessStates(awareness, [...owned], null);
       }
-
-      // an empty room is never used again unless someone rejoins, so don't keep it
-      if (conns.size === 0) {
-        awareness.destroy();
-        doc.destroy();
-        rooms.delete(name);
-        say(`room "${name}" removed (${rooms.size} rooms)`);
-      }
+      // empty rooms stay loaded: dropping the doc before it can be saved (M3) loses the file ids
     });
 
     socket.on("error", (err) => {

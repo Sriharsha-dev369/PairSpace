@@ -132,6 +132,7 @@ Moved here from `CLAUDE.md` (which now holds only working instructions). Append 
 | 2026-10-21 | Frontend: Vite + React + TypeScript, Tailwind CSS, shadcn/ui when components are needed, React Router; npm workspaces (`server`, `web`) with Biome at the root | Standard, well-supported stack; workspaces let one install and one lint/format config cover both packages | Other frameworks; separate repos; pnpm (npm already in use, no current need) |
 | 2026-10-21 | Room document model: `files` map of fileId to {name, content: Y.Text}; the server creates the first file when it opens a room | If clients created the first file, two people opening a new room at once would each create one and the shared map would keep only one, silently losing edits | Client-side initialization |
 | 2026-10-21 | CI: GitHub Actions on every push to `main` and every pull request. Two parallel jobs: (1) typecheck, lint, unit/integration tests, build; (2) Playwright e2e in Chromium, uploading traces on failure | Free for public repos, lives next to the code, the standard choice; parallel jobs keep feedback fast; traces make a CI-only failure debuggable | CircleCI, GitLab CI (extra service for no gain); one sequential job (slower) |
+| 2026-10-21 | Empty rooms stay loaded in memory until M3; unloading arrives together with saving | Unloading a room before its document is saved loses the file ids: a person who briefly dropped reconnects, the server creates a new `main.js`, and the room ends up with two files (found in review, reproduced in a test). M3 reloads the saved doc, which makes unloading safe | Unload after a grace period (a longer blip still duplicates); deterministic first-file id (two concurrent sets of one map key keep only one, silently losing an edit) |
 
 **Open decisions:** hosting (decide when the MVP is ready; a managed platform was the recommendation); when wiring Yjs, use `y-websocket`'s ready-made server instead of our own relay?
 
@@ -162,7 +163,7 @@ Also: collaborative undo/redo (each user undoes only their own edits) is subtle,
 | Room session: the client-side module the UI uses (join, files, people, status, change notifications) | `web/src/room/session.ts` | `web/src/room/session.test.ts` (4) |
 | UI: routing, room page, header, CodeMirror editor, guest identity | `web/src/App.tsx`, `web/src/pages/RoomPage.tsx`, `web/src/room/*.tsx`, `web/src/room/guest.ts` | `e2e/room.spec.ts` (4) + `e2e/smoke.spec.ts` |
 
-**Known gaps (planned):** nothing is saved (M3); no heartbeats, so a silently dead connection lingers until the OS notices (M2); reconnect UX is the provider's default (M2); no message size limit (M2); the web bundle is 866 kB, needs code splitting (M10).
+**Known gaps (planned):** nothing is saved, and empty rooms stay in memory until the server restarts; a restart while people are connected gives their room a second file (M3); no heartbeats, so a silently dead connection lingers until the OS notices (M2); reconnect UX is the provider's default (M2); no message size limit (M2); the web bundle is 866 kB, needs code splitting (M10).
 
 **Next: M2 reliability** (heartbeats, reconnect with resync, offline edits, fault-injection test). See `ROADMAP.md`.
 
