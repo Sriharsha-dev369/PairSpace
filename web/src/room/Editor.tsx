@@ -9,7 +9,7 @@ import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import type { RoomFile } from "./session";
 
-// layered on top of oneDark: our colours and fonts
+// layered on top of oneDark: our colours and fonts, and always-visible name labels sitting exactly on cursors
 const theme = EditorView.theme(
   {
     "&": { height: "100%", fontSize: "13.5px", backgroundColor: "var(--color-canvas)" },
@@ -24,6 +24,22 @@ const theme = EditorView.theme(
     },
     ".cm-activeLine": { backgroundColor: "rgb(255 255 255 / 0.03)" },
     ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--color-fg)" },
+    // inline-block + 1lh: the caret spans the whole line, so the label can sit exactly on top of it
+    ".cm-ySelectionCaret": { display: "inline-block", height: "1lh", verticalAlign: "top" },
+    ".cm-ySelectionCaretDot": { display: "none" }, // the label already marks the cursor; the dot only flickered
+    ".cm-ySelectionInfo": {
+      opacity: "1",
+      transition: "none",
+      top: "-15px",
+      height: "15px",
+      lineHeight: "15px",
+      padding: "0 6px",
+      borderRadius: "4px 4px 4px 0",
+      fontFamily: "var(--font-sans)",
+      fontSize: "10.5px",
+      fontWeight: "600",
+      color: "var(--color-canvas)",
+    },
   },
   { dark: true },
 );

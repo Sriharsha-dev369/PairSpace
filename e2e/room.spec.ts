@@ -77,3 +77,25 @@ test("shows the other person's cursor labelled with their name", async ({ browse
 
   await expect(bob.locator(".cm-ySelectionInfo")).toHaveText(aliceName);
 });
+
+test("the name label sits exactly on top of the other person's cursor", async ({ browser }) => {
+  const url = await newRoomUrl(browser);
+  const alice = await openRoomAs(browser, url);
+  const bob = await openRoomAs(browser, url);
+  await alice.locator(".cm-content").click();
+  await alice.keyboard.type("first line\nsecond line");
+
+  const box = async (selector: string) => {
+    const b = await bob.locator(selector).first().boundingBox();
+    if (!b) throw new Error(`${selector} is not visible`);
+    return b;
+  };
+  await expect(bob.locator(".cm-ySelectionInfo")).toBeVisible();
+  const caret = await box(".cm-ySelectionCaret");
+  const label = await box(".cm-ySelectionInfo");
+  const line = await box(".cm-line >> nth=1");
+
+  expect(Math.abs(label.y + label.height - caret.y), "label bottom on caret top").toBeLessThan(0.5);
+  expect(Math.abs(label.x - caret.x), "label left on caret left").toBeLessThan(0.5);
+  expect(Math.abs(caret.height - line.height), "caret is a full line tall").toBeLessThan(0.5);
+});
