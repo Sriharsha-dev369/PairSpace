@@ -116,8 +116,9 @@ describe("sync server", () => {
 
     it("gives a late joiner everything written before they arrived", async () => {
       const alice = await joinRoom("room1");
+      const carol = await joinRoom("room1"); // a witness: if carol has it, so does the server
       alice.doc.getText("probe").insert(0, "written earlier");
-      await sleep(SETTLE_MS); // let the server receive it
+      await waitFor(() => text(carol) === "written earlier", "the server to receive alice's edit");
 
       const bob = await joinRoom("room1");
 
@@ -292,8 +293,7 @@ describe("sync server", () => {
 
     it("accepts a 64 character name (the limit itself)", async () => {
       await connectRaw("x".repeat(64));
-      await sleep(SETTLE_MS);
-      expect(server.roomCount()).toBe(1);
+      await waitFor(() => server.roomCount() === 1, "the room to be created");
     });
 
     it("accepts letters, digits, dash and underscore", async () => {
