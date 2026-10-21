@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { Editor } from "../room/Editor";
 import { guestIdentity } from "../room/guest";
 import { RoomHeader } from "../room/RoomHeader";
@@ -10,14 +10,23 @@ import { useRoomState } from "../room/useRoomState";
 export function RoomPage() {
   const { roomId = "" } = useParams();
   const user = useMemo(guestIdentity, []);
-  const session = useRoomSession(roomId, user);
+  const join = useRoomSession(roomId, user);
 
-  if (!session) {
-    return (
-      <div className="grid h-screen place-items-center bg-gray-950 text-gray-400">Connecting…</div>
-    );
-  }
-  return <Room session={session} />;
+  if (join.state === "ready") return <Room session={join.session} />;
+  return (
+    <div className="grid h-screen place-items-center bg-gray-950 text-gray-400">
+      {join.state === "refused" ? (
+        <div className="flex flex-col items-center gap-3">
+          <p>This room link isn't valid.</p>
+          <Link to="/" className="text-sm text-emerald-400 hover:underline">
+            Start a new room
+          </Link>
+        </div>
+      ) : (
+        "Connecting…"
+      )}
+    </div>
+  );
 }
 
 function Room({ session }: { session: RoomSession }) {

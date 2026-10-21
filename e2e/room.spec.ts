@@ -25,6 +25,14 @@ test("opening the home page takes you to a new room link", async ({ page }) => {
   await expect(page).toHaveURL(/\/r\/[a-z0-9]{10}$/);
 });
 
+test("an invalid room link says so and offers a new room", async ({ page }) => {
+  await page.goto(`/r/${"x".repeat(65)}`); // one over the server's 64 character limit
+
+  await expect(page.getByText("This room link isn't valid")).toBeVisible();
+  await page.getByRole("link", { name: "Start a new room" }).click();
+  await expect(page.locator(".cm-content")).toBeVisible();
+});
+
 test("two people in the same room see each other's typing", async ({ browser }) => {
   const url = await newRoomUrl(browser);
   const alice = await openRoomAs(browser, url);

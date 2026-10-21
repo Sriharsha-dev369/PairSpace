@@ -160,8 +160,8 @@ Also: collaborative undo/redo (each user undoes only their own edits) is subtle,
 | Part | Where | Tests |
 |---|---|---|
 | Sync server: Yjs sync and presence over WebSocket, rooms in memory, server-created first file, input validation | `server/src/sync-server.ts` (started by `server/src/index.ts`) | `server/test/sync-server.test.ts` (23) |
-| Room session: the client-side module the UI uses (join, files, people, status, change notifications) | `web/src/room/session.ts` | `web/src/room/session.test.ts` (4) |
-| UI: routing, room page, header, CodeMirror editor, guest identity | `web/src/App.tsx`, `web/src/pages/RoomPage.tsx`, `web/src/room/*.tsx`, `web/src/room/guest.ts` | `e2e/room.spec.ts` (4) + `e2e/smoke.spec.ts` |
+| Room session: the client-side module the UI uses (join, files, people, status, change notifications) | `web/src/room/session.ts` | `web/src/room/session.test.ts` (5) |
+| UI: routing, room page, header, CodeMirror editor, guest identity | `web/src/App.tsx`, `web/src/pages/RoomPage.tsx`, `web/src/room/*.tsx`, `web/src/room/guest.ts` | `e2e/room.spec.ts` (5) + `e2e/smoke.spec.ts` |
 
 **Known gaps (planned):** nothing is saved, and empty rooms stay in memory until the server restarts; a restart while people are connected gives their room a second file (M3); no heartbeats, so a silently dead connection lingers until the OS notices (M2); reconnect UX is the provider's default (M2); no message size limit (M2); the web bundle is 866 kB, needs code splitting (M10).
 
