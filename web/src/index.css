@@ -1,1 +1,25 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+
+  --color-canvas: #0b0c10;
+  --color-surface: #111318;
+  --color-raised: #191c23;
+  --color-line: rgb(255 255 255 / 0.07);
+  --color-fg: #e6e8ee;
+  --color-muted: #8b91a1;
+  --color-faint: #565b69;
+  --color-accent: #8b8cff;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-canvas font-sans text-fg antialiased;
+}

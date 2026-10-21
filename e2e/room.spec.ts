@@ -33,6 +33,18 @@ test("an invalid room link says so and offers a new room", async ({ page }) => {
   await expect(page.locator(".cm-content")).toBeVisible();
 });
 
+test("the share button copies the room link", async ({ browser }) => {
+  const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"] });
+  const page = await context.newPage();
+  await page.goto("/");
+  await expect(page.locator(".cm-content")).toBeVisible();
+
+  await page.getByRole("button", { name: "Share" }).click();
+
+  await expect(page.getByRole("button", { name: "Link copied" })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(page.url());
+});
+
 test("two people in the same room see each other's typing", async ({ browser }) => {
   const url = await newRoomUrl(browser);
   const alice = await openRoomAs(browser, url);
