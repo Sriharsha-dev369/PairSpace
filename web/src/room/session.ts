@@ -2,7 +2,8 @@ import type { Awareness } from "y-protocols/awareness";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 
-export type ConnectionStatus = "connecting" | "connected" | "disconnected";
+// too-large: the server refused one of our changes as over its size limit, so we stopped retrying
+export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "too-large";
 
 export interface User {
   name: string;
@@ -31,6 +32,11 @@ export interface RoomSession {
   leave(): void;
 }
 
+const MESSAGE_TOO_BIG = 1009; // standard close code; every retry would re-send the same change
+
+// y-websocket's default (not exported): 4400-4499 means the server refused us for good
+const isPermanentRefusal = (code: number) => code >= 4400 && code < 4500;
+
 interface JoinOptions {
   serverUrl: string;
   room: string;
@@ -40,7 +46,10 @@ interface JoinOptions {
 export function joinRoom({ serverUrl, room, user }: JoinOptions): RoomSession {
   const doc = new Y.Doc();
   // no cross-tab BroadcastChannel: every edit goes through the server, where it can be observed
-  const provider = new WebsocketProvider(serverUrl, room, doc, { disableBc: true });
+  const provider = new WebsocketProvider(serverUrl, room, doc, {
+    disableBc: true,
+    shouldReconnect: ({ code }) => code !== MESSAGE_TOO_BIG && !isPermanentRefusal(code),
+  });
   const { awareness } = provider;
 
   // colorLight is what CodeMirror's Yjs binding uses to tint this person's selections
@@ -52,6 +61,11 @@ export function joinRoom({ serverUrl, room, user }: JoinOptions): RoomSession {
   };
   provider.on("status", notify);
   awareness.on("change", notify);
+  let tooLarge = false;
+  provider.on("closed", ({ code }) => {
+    tooLarge = code === MESSAGE_TOO_BIG;
+    notify();
+  });
 
   const synced = new Promise<void>((resolve, reject) => {
     if (provider.synced) resolve();
@@ -81,6 +95,7 @@ export function joinRoom({ serverUrl, room, user }: JoinOptions): RoomSession {
           isMe: clientId === doc.clientID,
         })),
     status: () => {
+      if (tooLarge) return "too-large";
       if (provider.wsconnected) return "connected";
       return provider.wsconnecting ? "connecting" : "disconnected";
     },

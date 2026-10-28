@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 // the `ws` client rather than Node's built-in one: only it can be told not to answer pings
 import { WebSocket } from "ws";
 import { Awareness, encodeAwarenessUpdate } from "y-protocols/awareness";
+import * as syncProtocol from "y-protocols/sync";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 import { createSyncServer, type SyncServer } from "../src/sync-server";
@@ -125,6 +126,23 @@ describe("sync server", () => {
     encoding.writeVarUint8Array(encoder, encodeAwarenessUpdate(awareness, [awareness.clientID]));
     awareness.destroy();
     return encoding.toUint8Array(encoder);
+  }
+
+  // the sync message a Yjs client sends for an edit that inserts `chars` x's into "probe"
+  function editMessage(chars: number) {
+    const doc = new Y.Doc();
+    doc.clientID = 1; // fixed: a random one varies in encoded length, and so would the message
+    doc.getText("probe").insert(0, "x".repeat(chars));
+    const encoder = encoding.createEncoder();
+    encoding.writeVarUint(encoder, 0); // message type: sync
+    syncProtocol.writeUpdate(encoder, Y.encodeStateAsUpdate(doc));
+    return encoding.toUint8Array(encoder);
+  }
+
+  // an edit message exactly `bytes` long (for sizes in the hundreds to thousands)
+  function editMessageOfSize(bytes: number) {
+    const overhead = editMessage(500).length - 500;
+    return editMessage(bytes - overhead);
   }
 
   // ---------- syncing documents ----------
@@ -411,10 +429,43 @@ describe("sync server", () => {
     });
   });
 
+  // ---------- message size limit ----------
+
+  describe("message size limit", () => {
+    beforeEach(async () => {
+      await server.close();
+      server = await createSyncServer({ port: 0, maxMessageBytes: 1000 });
+    });
+
+    it("disconnects a client whose message is over the size limit (1009), and the room carries on without it", async () => {
+      const bob = await joinRoom("room1");
+      const carol = await joinRoom("room1");
+      const big = await connectRaw("room1");
+
+      big.send(editMessageOfSize(1001));
+
+      expect((await big.closed()).code).toBe(1009);
+      carol.doc.getText("probe").insert(0, "still here");
+      await waitFor(() => text(bob).includes("still here"), "bob to see carol's edit");
+      await sleep(SETTLE_MS);
+      expect(text(bob)).toBe("still here");
+    });
+
+    it("accepts a message exactly at the size limit", async () => {
+      const bob = await joinRoom("room1");
+      const alice = await connectRaw("room1");
+      const message = editMessageOfSize(1000);
+      expect(message.length).toBe(1000);
+
+      alice.send(message);
+
+      await waitFor(() => text(bob).length > 0, "bob to receive alice's edit");
+    });
+  });
+
   // ---------- known gaps: not built yet, tracked here so we don't forget ----------
 
   describe("not built yet", () => {
-    it.todo("rejects messages above a maximum size");
     it.todo("lets a disconnected client catch up on what it missed");
     it.todo("unloads an empty room once its document is saved (M3)");
   });

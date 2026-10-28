@@ -8,7 +8,7 @@ How the three files relate:
 | `CLAUDE.md` | Working instructions for Claude (commands, stack, workflow). Local only: it is in `.gitignore` |
 | `context.md` (this file) | *Where we are*: what was reasoned, decided and learned, and what's next |
 
-Status: M1 done (live co-editing, presence, cursors, tested end to end). M2 reliability in progress: heartbeats done. Not deployed. Last updated 2026-10-28.
+Status: M1 done (live co-editing, presence, cursors, tested end to end). M2 reliability in progress: heartbeats and message size limit done. Not deployed. Last updated 2026-10-28.
 
 ---
 
@@ -137,6 +137,8 @@ Moved here from `CLAUDE.md` (which now holds only working instructions). Append 
 | 2026-10-28 | Heartbeat: every 10s the server pings each connection and terminates one that didn't answer the previous ping; the close handler then removes its presence | The documented `ws` pattern; browsers answer pings with no client code. Dead connections go in 10–20s, before Yjs's 30s presence timeout, and stop holding rooms open | OS TCP keepalive (default about 2h); relying on the awareness timeout (removes presence but leaves the dead socket in the room) |
 | 2026-10-28 | Keepalive: on the same tick, send each connection an awareness message listing nobody (3 bytes) | y-websocket drops a connection it hears nothing on for 30s, so a person alone in an idle room was disconnected every ~33s (reproduced). The empty update is a no-op for clients and uses the existing protocol | Echoing every awareness update back to its sender like y-websocket's reference server (doubles cursor traffic to each sender); a new message type (y-websocket logs an error); query-awareness (every client replies); periodic sync step 1 (a resync round trip each tick) |
 | 2026-10-28 | Heartbeat interval 10s, configurable (`heartbeatMs`; tests use 50ms) | 3x margin under the client's 30s silence limit | 30s, the `ws` README default (no margin, and ghosts could linger up to 60s) |
+| 2026-10-28 | Limit each message to 2 MiB (`maxMessageBytes`) with `ws`'s `maxPayload`, which closes with the standard code 1009 | `ws` checks a frame's declared length before reading it, so an oversize message is never buffered. The biggest legitimate message is a whole room re-sent after the server lost it (a restart before M3), so this allows rooms of about 1–1.5 MB of code | `ws`'s 100 MiB default (one client can make the server hold, apply and broadcast 100 MiB); checking size in our message handler (already buffered by then); 1 MB like Socket.IO's default (a big pasted file would fail); a custom 44xx code (`ws` sends 1009 itself) |
+| 2026-10-28 | The client treats close 1009 as permanent: it stops reconnecting and the header says "Change too large to sync" | y-websocket's default retries 1009, and every retry re-sends the same change, so it looped every ~200ms and never synced (seen in a test: 3 joins in 600ms) | The default retry; making the server send a 44xx code instead (not possible with `maxPayload`) |
 
 **Open decisions:** hosting (decide when the MVP is ready; a managed platform was the recommendation); when wiring Yjs, use `y-websocket`'s ready-made server instead of our own relay?
 
@@ -163,11 +165,11 @@ Also: collaborative undo/redo (each user undoes only their own edits) is subtle,
 
 | Part | Where | Tests |
 |---|---|---|
-| Sync server: Yjs sync and presence over WebSocket, rooms in memory, server-created first file, input validation, heartbeats | `server/src/sync-server.ts` (started by `server/src/index.ts`) | `server/test/sync-server.test.ts` (28) |
-| Room session: the client-side module the UI uses (join, files, people, status, change notifications) | `web/src/room/session.ts` | `web/src/room/session.test.ts` (5) |
+| Sync server: Yjs sync and presence over WebSocket, rooms in memory, server-created first file, input validation, heartbeats, message size limit | `server/src/sync-server.ts` (started by `server/src/index.ts`) | `server/test/sync-server.test.ts` (30) |
+| Room session: the client-side module the UI uses (join, files, people, status, change notifications) | `web/src/room/session.ts` | `web/src/room/session.test.ts` (6) |
 | UI: routing, room page, header, CodeMirror editor, guest identity | `web/src/App.tsx`, `web/src/pages/RoomPage.tsx`, `web/src/room/*.tsx`, `web/src/room/guest.ts` | `e2e/room.spec.ts` (5) + `e2e/smoke.spec.ts` |
 
-**Known gaps (planned):** nothing is saved, and empty rooms stay in memory until the server restarts; a restart while people are connected gives their room a second file (M3); a browser notices a dead server only after y-websocket's fixed 30s silence limit (M2); reconnect UX is the provider's default (M2); no message size limit (M2); the web bundle is 866 kB, needs code splitting (M10).
+**Known gaps (planned):** nothing is saved, and empty rooms stay in memory until the server restarts; a restart while people are connected gives their room a second file (M3); a browser notices a dead server only after y-websocket's fixed 30s silence limit (M2); reconnect UX is the provider's default (M2); a change refused as too large stays only in that tab, and a reload loses it (warn before such a paste, M2); rooms have no total size cap, only a per-message one (M3/M11); the web bundle is 866 kB, needs code splitting (M10).
 
-**Next: rest of M2 reliability** (message size limit, fault-injection proxy with convergence tests for offline edits, reconnecting UX). See `ROADMAP.md`.
+**Next: rest of M2 reliability** (fault-injection proxy with convergence tests for offline edits, reconnecting UX). See `ROADMAP.md`.
 

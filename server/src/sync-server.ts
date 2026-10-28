@@ -14,6 +14,7 @@ export interface SyncServer {
 interface Options {
   port: number; // 0 = let the OS pick a free port (used by tests)
   heartbeatMs?: number;
+  maxMessageBytes?: number;
   log?: (line: string) => void;
 }
 
@@ -43,6 +44,9 @@ const HEARTBEAT_MS = 10_000;
 // an awareness message (type, payload length 1) listing zero people: clients apply it as a no-op
 const KEEPALIVE = new Uint8Array([MESSAGE_AWARENESS, 1, 0]);
 
+// the biggest legit message is a whole room re-sent after the server lost it; refuse more (1009)
+const MAX_MESSAGE_BYTES = 2 * 1024 * 1024;
+
 // the room name comes from the URL, which the client controls, so restrict it
 const ROOM_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -66,9 +70,11 @@ function awarenessMessage(awareness: awarenessProtocol.Awareness, clientIds: num
 export function createSyncServer({
   port,
   heartbeatMs = HEARTBEAT_MS,
+  maxMessageBytes = MAX_MESSAGE_BYTES,
   log = () => {},
 }: Options): Promise<SyncServer> {
-  const wss = new WebSocketServer({ port });
+  // ws checks a frame's declared length before reading it, so oversize messages are never buffered
+  const wss = new WebSocketServer({ port, maxPayload: maxMessageBytes });
   const rooms = new Map<string, Room>();
   const beats = new Map<WebSocket, () => void>(); // what each connection does on every heartbeat
   let nextId = 1;

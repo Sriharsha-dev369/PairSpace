@@ -66,6 +66,28 @@ describe("room session", () => {
     expect(notified).toBeGreaterThan(0);
   });
 
+  it("stops reconnecting and says so when a change is too large to sync", async () => {
+    await server.close();
+    let joins = 0;
+    server = await createSyncServer({
+      port: 0,
+      maxMessageBytes: 1000,
+      log: (line) => {
+        if (line.includes("joined")) joins++;
+      },
+    });
+    const session = join();
+    await session.synced;
+    const seen: string[] = []; // what the UI would show after each notification
+    session.subscribe(() => seen.push(session.status()));
+
+    session.files()[0].content.insert(0, "x".repeat(2000));
+
+    await waitFor(() => seen.at(-1) === "too-large", "the UI to be told the change is too large");
+    await sleep(600); // longer than the provider's first reconnect delay (200ms)
+    expect(joins).toBe(1);
+  });
+
   it("tells the UI when someone joins", async () => {
     const mine = join("room1", alice);
     await mine.synced;
