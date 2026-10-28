@@ -148,8 +148,21 @@ export function createSyncServer({
     const present = [...awareness.getStates().keys()];
     if (present.length > 0) socket.send(awarenessMessage(awareness, present));
 
+    // no answer to the last ping means the other end is gone, e.g. a laptop that went to sleep
+    let answered = true;
+    socket.on("pong", () => {
+      answered = true;
+    });
     beats.set(socket, () => {
-      if (socket.readyState === WebSocket.OPEN) socket.send(KEEPALIVE);
+      if (!answered) {
+        say("no heartbeat reply, disconnecting");
+        socket.terminate(); // the close handler removes its presence
+        return;
+      }
+      if (socket.readyState !== WebSocket.OPEN) return;
+      answered = false;
+      socket.ping();
+      socket.send(KEEPALIVE);
     });
 
     socket.on("message", (data) => {

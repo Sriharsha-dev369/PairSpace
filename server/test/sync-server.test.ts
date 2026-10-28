@@ -1,7 +1,11 @@
 // Spec for the sync server: read the test names top to bottom to see how it should behave.
 // Every test starts its own server on a random free port, so tests never affect each other.
 
+import * as encoding from "lib0/encoding";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+// the `ws` client rather than Node's built-in one: only it can be told not to answer pings
+import { WebSocket } from "ws";
+import { Awareness, encodeAwarenessUpdate } from "y-protocols/awareness";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 import { createSyncServer, type SyncServer } from "../src/sync-server";
@@ -61,12 +65,14 @@ describe("sync server", () => {
     await server.close();
   });
 
-  // a plain WebSocket, for connection-level behavior (validation, room lifecycle)
-  async function connectRaw(room: string): Promise<RawClient> {
-    const socket = new WebSocket(`ws://localhost:${server.port}/${room}`);
+  // a plain WebSocket, for connection-level behavior (validation, room lifecycle, heartbeats)
+  async function connectRaw(room: string, { answerPings = true } = {}): Promise<RawClient> {
+    const socket = new WebSocket(`ws://localhost:${server.port}/${room}`, {
+      autoPong: answerPings,
+    });
     socket.binaryType = "arraybuffer";
     const messages: Uint8Array[] = [];
-    socket.addEventListener("message", (e) => messages.push(new Uint8Array(e.data)));
+    socket.addEventListener("message", (e) => messages.push(new Uint8Array(e.data as ArrayBuffer)));
     const closeEvent = new Promise<{ code: number; reason: string }>((resolve) =>
       socket.addEventListener("close", (e) => resolve({ code: e.code, reason: e.reason })),
     );
@@ -106,6 +112,20 @@ describe("sync server", () => {
   }
 
   const text = (client: YjsClient) => client.doc.getText("probe").toString();
+
+  const sees = (viewer: YjsClient, name: string) =>
+    [...viewer.provider.awareness.getStates().values()].some((s) => s.user?.name === name);
+
+  // the presence message a Yjs client sends to announce itself, for raw clients to send
+  function presenceMessage(name: string) {
+    const awareness = new Awareness(new Y.Doc());
+    awareness.setLocalStateField("user", { name });
+    const encoder = encoding.createEncoder();
+    encoding.writeVarUint(encoder, 1); // message type: awareness
+    encoding.writeVarUint8Array(encoder, encodeAwarenessUpdate(awareness, [awareness.clientID]));
+    awareness.destroy();
+    return encoding.toUint8Array(encoder);
+  }
 
   // ---------- syncing documents ----------
 
@@ -169,9 +189,6 @@ describe("sync server", () => {
   // ---------- presence (names, colours, cursors: shared live, never saved) ----------
 
   describe("presence", () => {
-    const sees = (viewer: YjsClient, name: string) =>
-      [...viewer.provider.awareness.getStates().values()].some((s) => s.user?.name === name);
-
     it("shows each person's presence to the others in the room", async () => {
       const alice = await joinRoom("room1");
       const bob = await joinRoom("room1");
@@ -369,12 +386,34 @@ describe("sync server", () => {
       expect([...alice.provider.awareness.getStates()]).toEqual(presenceBefore);
       expect(errors).not.toHaveBeenCalled();
     });
+
+    it("disconnects a connection that stops answering heartbeats", async () => {
+      const ghost = await connectRaw("room1", { answerPings: false }); // e.g. a laptop gone to sleep
+
+      await ghost.closed();
+    });
+
+    it("removes the presence of a person whose connection stops answering", async () => {
+      const bob = await joinRoom("room1");
+      const ghost = await connectRaw("room1", { answerPings: false });
+      ghost.send(presenceMessage("Ghost"));
+      await waitFor(() => sees(bob, "Ghost"), "bob to see the ghost");
+
+      // well inside Yjs's own 30s presence timeout, so the heartbeat is what removed it
+      await waitFor(() => !sees(bob, "Ghost"), "the ghost's presence to disappear for bob");
+    });
+
+    it("keeps a connection that answers heartbeats", async () => {
+      const alice = await connectRaw("room1");
+
+      // an unanswered connection is cut on the second heartbeat, so it would never hear five
+      await waitFor(() => alice.messages.filter(isKeepalive).length >= 5, "five keepalives");
+    });
   });
 
   // ---------- known gaps: not built yet, tracked here so we don't forget ----------
 
   describe("not built yet", () => {
-    it.todo("detects a client whose connection died silently (heartbeat)");
     it.todo("rejects messages above a maximum size");
     it.todo("lets a disconnected client catch up on what it missed");
     it.todo("unloads an empty room once its document is saved (M3)");

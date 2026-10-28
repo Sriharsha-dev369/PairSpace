@@ -8,7 +8,7 @@ How the three files relate:
 | `CLAUDE.md` | Working instructions for Claude (commands, stack, workflow). Local only: it is in `.gitignore` |
 | `context.md` (this file) | *Where we are*: what was reasoned, decided and learned, and what's next |
 
-Status: M1 done (live co-editing, presence, cursors, tested end to end). Not deployed. Next: M2 reliability. Last updated 2026-10-21.
+Status: M1 done (live co-editing, presence, cursors, tested end to end). M2 reliability in progress: heartbeats done. Not deployed. Last updated 2026-10-28.
 
 ---
 
@@ -88,6 +88,7 @@ Real-time collaborative code editor. Two (later N) people join a room via a shar
 | **HTTP limits** | Request/response only. The server cannot speak first, so it can't push Alice's edit to an idle Bob |
 | **WebSocket** | Starts as an HTTP request with `Upgrade: websocket`, then the same TCP connection stays open and both sides can send anytime. Client opens it outbound, so NAT is not a problem |
 | **WebSocket gaps** | Dead connections aren't always noticed (need heartbeats/ping-pong); no auto-reconnect; order only holds within one connection; each user holds a connection open; message format is ours to design |
+| **Heartbeat** | A peer that vanishes (sleep, wifi drop) never sends a TCP close, so its socket looks open for hours (a *half-open* connection). The server pings each connection every 10s and cuts one that didn't answer the previous ping. Browsers answer pings automatically, but page JS can't see them, so the server also sends a tiny keepalive message: y-websocket drops a connection it hears nothing on for 30s |
 | **Alternatives to WebSocket** | Polling (delay + wasted requests), long polling (header overhead per message), SSE (server to browser only) |
 
 ### Sync
@@ -133,6 +134,9 @@ Moved here from `CLAUDE.md` (which now holds only working instructions). Append 
 | 2026-10-21 | Room document model: `files` map of fileId to {name, content: Y.Text}; the server creates the first file when it opens a room | If clients created the first file, two people opening a new room at once would each create one and the shared map would keep only one, silently losing edits | Client-side initialization |
 | 2026-10-21 | CI: GitHub Actions on every push to `main` and every pull request. Two parallel jobs: (1) typecheck, lint, unit/integration tests, build; (2) Playwright e2e in Chromium, uploading traces on failure | Free for public repos, lives next to the code, the standard choice; parallel jobs keep feedback fast; traces make a CI-only failure debuggable | CircleCI, GitLab CI (extra service for no gain); one sequential job (slower) |
 | 2026-10-21 | Empty rooms stay loaded in memory until M3; unloading arrives together with saving | Unloading a room before its document is saved loses the file ids: a person who briefly dropped reconnects, the server creates a new `main.js`, and the room ends up with two files (found in review, reproduced in a test). M3 reloads the saved doc, which makes unloading safe | Unload after a grace period (a longer blip still duplicates); deterministic first-file id (two concurrent sets of one map key keep only one, silently losing an edit) |
+| 2026-10-28 | Heartbeat: every 10s the server pings each connection and terminates one that didn't answer the previous ping; the close handler then removes its presence | The documented `ws` pattern; browsers answer pings with no client code. Dead connections go in 10–20s, before Yjs's 30s presence timeout, and stop holding rooms open | OS TCP keepalive (default about 2h); relying on the awareness timeout (removes presence but leaves the dead socket in the room) |
+| 2026-10-28 | Keepalive: on the same tick, send each connection an awareness message listing nobody (3 bytes) | y-websocket drops a connection it hears nothing on for 30s, so a person alone in an idle room was disconnected every ~33s (reproduced). The empty update is a no-op for clients and uses the existing protocol | Echoing every awareness update back to its sender like y-websocket's reference server (doubles cursor traffic to each sender); a new message type (y-websocket logs an error); query-awareness (every client replies); periodic sync step 1 (a resync round trip each tick) |
+| 2026-10-28 | Heartbeat interval 10s, configurable (`heartbeatMs`; tests use 50ms) | 3x margin under the client's 30s silence limit | 30s, the `ws` README default (no margin, and ghosts could linger up to 60s) |
 
 **Open decisions:** hosting (decide when the MVP is ready; a managed platform was the recommendation); when wiring Yjs, use `y-websocket`'s ready-made server instead of our own relay?
 
@@ -159,11 +163,11 @@ Also: collaborative undo/redo (each user undoes only their own edits) is subtle,
 
 | Part | Where | Tests |
 |---|---|---|
-| Sync server: Yjs sync and presence over WebSocket, rooms in memory, server-created first file, input validation | `server/src/sync-server.ts` (started by `server/src/index.ts`) | `server/test/sync-server.test.ts` (23) |
+| Sync server: Yjs sync and presence over WebSocket, rooms in memory, server-created first file, input validation, heartbeats | `server/src/sync-server.ts` (started by `server/src/index.ts`) | `server/test/sync-server.test.ts` (28) |
 | Room session: the client-side module the UI uses (join, files, people, status, change notifications) | `web/src/room/session.ts` | `web/src/room/session.test.ts` (5) |
 | UI: routing, room page, header, CodeMirror editor, guest identity | `web/src/App.tsx`, `web/src/pages/RoomPage.tsx`, `web/src/room/*.tsx`, `web/src/room/guest.ts` | `e2e/room.spec.ts` (5) + `e2e/smoke.spec.ts` |
 
-**Known gaps (planned):** nothing is saved, and empty rooms stay in memory until the server restarts; a restart while people are connected gives their room a second file (M3); no heartbeats, so a silently dead connection lingers until the OS notices (M2); reconnect UX is the provider's default (M2); no message size limit (M2); the web bundle is 866 kB, needs code splitting (M10).
+**Known gaps (planned):** nothing is saved, and empty rooms stay in memory until the server restarts; a restart while people are connected gives their room a second file (M3); a browser notices a dead server only after y-websocket's fixed 30s silence limit (M2); reconnect UX is the provider's default (M2); no message size limit (M2); the web bundle is 866 kB, needs code splitting (M10).
 
-**Next: M2 reliability** (heartbeats, reconnect with resync, offline edits, fault-injection test). See `ROADMAP.md`.
+**Next: rest of M2 reliability** (message size limit, fault-injection proxy with convergence tests for offline edits, reconnecting UX). See `ROADMAP.md`.
 
