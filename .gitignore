@@ -17,6 +17,8 @@ dist/
 coverage/
 
 CLAUDE.md
+# Claude's working notes: one spec per slice, with progress
+specs/
 
 # Playwright output
 test-results/
