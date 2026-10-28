@@ -13,6 +13,7 @@ export interface SyncServer {
 
 interface Options {
   port: number; // 0 = let the OS pick a free port (used by tests)
+  heartbeatMs?: number;
   log?: (line: string) => void;
 }
 
@@ -37,6 +38,11 @@ const MESSAGE_AWARENESS = 1;
 const CLOSE_INVALID_ROOM = 4400;
 const CLOSE_MALFORMED = 1007; // standard WebSocket code for "invalid payload data"
 
+// y-websocket clients drop a connection they hear nothing on for 30s, so beat well inside that
+const HEARTBEAT_MS = 10_000;
+// an awareness message (type, payload length 1) listing zero people: clients apply it as a no-op
+const KEEPALIVE = new Uint8Array([MESSAGE_AWARENESS, 1, 0]);
+
 // the room name comes from the URL, which the client controls, so restrict it
 const ROOM_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -57,10 +63,19 @@ function awarenessMessage(awareness: awarenessProtocol.Awareness, clientIds: num
   return encoding.toUint8Array(encoder);
 }
 
-export function createSyncServer({ port, log = () => {} }: Options): Promise<SyncServer> {
+export function createSyncServer({
+  port,
+  heartbeatMs = HEARTBEAT_MS,
+  log = () => {},
+}: Options): Promise<SyncServer> {
   const wss = new WebSocketServer({ port });
   const rooms = new Map<string, Room>();
+  const beats = new Map<WebSocket, () => void>(); // what each connection does on every heartbeat
   let nextId = 1;
+
+  const heartbeat = setInterval(() => {
+    for (const beat of beats.values()) beat();
+  }, heartbeatMs);
 
   function broadcast(room: Room, message: Uint8Array, except: unknown) {
     for (const conn of room.conns) {
@@ -133,6 +148,10 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
     const present = [...awareness.getStates().keys()];
     if (present.length > 0) socket.send(awarenessMessage(awareness, present));
 
+    beats.set(socket, () => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(KEEPALIVE);
+    });
+
     socket.on("message", (data) => {
       // a thrown error here would be uncaught and crash the whole server, so contain it
       try {
@@ -161,6 +180,7 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
 
     socket.on("close", (code) => {
       conns.delete(socket);
+      beats.delete(socket);
       say(`left "${name}", code ${code} (${conns.size} in room)`);
 
       // a dropped connection never says goodbye, so remove its presence for everyone else
@@ -185,6 +205,7 @@ export function createSyncServer({ port, log = () => {} }: Options): Promise<Syn
         roomCount: () => rooms.size,
         close: () =>
           new Promise<void>((done) => {
+            clearInterval(heartbeat);
             for (const client of wss.clients) client.terminate();
             wss.close(() => done());
           }),

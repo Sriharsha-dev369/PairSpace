@@ -1,7 +1,7 @@
 // Spec for the sync server: read the test names top to bottom to see how it should behave.
 // Every test starts its own server on a random free port, so tests never affect each other.
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 import { createSyncServer, type SyncServer } from "../src/sync-server";
@@ -9,6 +9,7 @@ import { createSyncServer, type SyncServer } from "../src/sync-server";
 // ---------- test helpers ----------
 
 interface RawClient {
+  messages: Uint8Array[]; // everything the server sent, in order
   closed(): Promise<{ code: number; reason: string }>; // fails after 1s if the connection never closes
   send(bytes: Uint8Array<ArrayBuffer>): void;
   close(): void;
@@ -63,10 +64,14 @@ describe("sync server", () => {
   // a plain WebSocket, for connection-level behavior (validation, room lifecycle)
   async function connectRaw(room: string): Promise<RawClient> {
     const socket = new WebSocket(`ws://localhost:${server.port}/${room}`);
+    socket.binaryType = "arraybuffer";
+    const messages: Uint8Array[] = [];
+    socket.addEventListener("message", (e) => messages.push(new Uint8Array(e.data)));
     const closeEvent = new Promise<{ code: number; reason: string }>((resolve) =>
       socket.addEventListener("close", (e) => resolve({ code: e.code, reason: e.reason })),
     );
     const client: RawClient = {
+      messages,
       // created on demand so a never-awaited rejection can't crash the run
       closed: () =>
         Promise.race([
@@ -325,6 +330,44 @@ describe("sync server", () => {
       expect((await broken.closed()).code).toBe(1007);
       alice.doc.getText("probe").insert(0, "still working");
       await waitFor(() => text(bob) === "still working", "bob to keep receiving edits");
+    });
+  });
+
+  // ---------- heartbeats (noticing dead connections, and keeping live ones alive) ----------
+
+  describe("heartbeats", () => {
+    // an awareness message (type 1, payload length 1) listing zero people
+    const isKeepalive = (message: Uint8Array) => message.join() === "1,1,0";
+
+    beforeEach(async () => {
+      await server.close();
+      server = await createSyncServer({ port: 0, heartbeatMs: 50 });
+    });
+
+    // y-websocket drops a connection it hears nothing on for 30s, even a healthy idle one
+    it("sends every connection a keepalive, even when it's alone in a room", async () => {
+      const alice = await connectRaw("room1");
+
+      await waitFor(() => alice.messages.some(isKeepalive), "a keepalive");
+    });
+
+    it("a keepalive tells a Yjs client the server is there, and changes nothing else", async () => {
+      const errors = vi.spyOn(console, "error"); // y-websocket logs messages it can't handle
+      onTestFinished(() => errors.mockRestore());
+      const alice = await joinRoom("room1");
+      const statuses: string[] = [];
+      alice.provider.on("status", ({ status }) => statuses.push(status));
+      let heard = 0; // alone and idle, so everything alice hears is a keepalive
+      alice.provider.ws?.addEventListener("message", () => heard++);
+      const presenceBefore = [...alice.provider.awareness.getStates()];
+      const heardBefore = alice.provider.wsLastMessageReceived; // its 30s silence timer reads this
+
+      await waitFor(() => heard >= 3, "three keepalives");
+
+      expect(alice.provider.wsLastMessageReceived).toBeGreaterThan(heardBefore);
+      expect(statuses).toEqual([]);
+      expect([...alice.provider.awareness.getStates()]).toEqual(presenceBefore);
+      expect(errors).not.toHaveBeenCalled();
     });
   });
 
