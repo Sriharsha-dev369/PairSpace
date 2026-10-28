@@ -8,7 +8,7 @@ How the three files relate:
 | `CLAUDE.md` | Working instructions for Claude (commands, stack, workflow). Local only: it is in `.gitignore` |
 | `context.md` (this file) | *Where we are*: what was reasoned, decided and learned, and what's next |
 
-Status: M1 done (live co-editing, presence, cursors, tested end to end). M2 reliability in progress: heartbeats and message size limit done. Not deployed. Last updated 2026-10-28.
+Status: M1 done (live co-editing, presence, cursors, tested end to end). M2 reliability in progress: heartbeats, message size limit and fault-injection tests done (M2's done-when met); reconnecting UX remains. Not deployed. Last updated 2026-10-28.
 
 ---
 
@@ -89,6 +89,7 @@ Real-time collaborative code editor. Two (later N) people join a room via a shar
 | **WebSocket** | Starts as an HTTP request with `Upgrade: websocket`, then the same TCP connection stays open and both sides can send anytime. Client opens it outbound, so NAT is not a problem |
 | **WebSocket gaps** | Dead connections aren't always noticed (need heartbeats/ping-pong); no auto-reconnect; order only holds within one connection; each user holds a connection open; message format is ours to design |
 | **Heartbeat** | A peer that vanishes (sleep, wifi drop) never sends a TCP close, so its socket looks open for hours (a *half-open* connection). The server pings each connection every 10s and cuts one that didn't answer the previous ping. Browsers answer pings automatically, but page JS can't see them, so the server also sends a tiny keepalive message: y-websocket drops a connection it hears nothing on for 30s |
+| **What TCP guarantees** | Within one connection, bytes arrive complete, once and in order, or the connection dies. Packet loss shows up as delay (TCP resends) or a dead connection, never as a missing, repeated or reordered message. So the realistic faults to test are delay, a dropped connection, going offline, and a frozen (half-open) connection |
 | **Alternatives to WebSocket** | Polling (delay + wasted requests), long polling (header overhead per message), SSE (server to browser only) |
 
 ### Sync
@@ -139,6 +140,7 @@ Moved here from `CLAUDE.md` (which now holds only working instructions). Append 
 | 2026-10-28 | Heartbeat interval 10s, configurable (`heartbeatMs`; tests use 50ms) | 3x margin under the client's 30s silence limit | 30s, the `ws` README default (no margin, and ghosts could linger up to 60s) |
 | 2026-10-28 | Limit each message to 2 MiB (`maxMessageBytes`) with `ws`'s `maxPayload`, which closes with the standard code 1009 | `ws` checks a frame's declared length before reading it, so an oversize message is never buffered. The biggest legitimate message is a whole room re-sent after the server lost it (a restart before M3), so this allows rooms of about 1–1.5 MB of code | `ws`'s 100 MiB default (one client can make the server hold, apply and broadcast 100 MiB); checking size in our message handler (already buffered by then); 1 MB like Socket.IO's default (a big pasted file would fail); a custom 44xx code (`ws` sends 1009 itself) |
 | 2026-10-28 | The client treats close 1009 as permanent: it stops reconnecting and the header says "Change too large to sync" | y-websocket's default retries 1009, and every retry re-sends the same change, so it looped every ~200ms and never synced (seen in a test: 3 joins in 600ms) | The default retry; making the server send a 44xx code instead (not possible with `maxPayload`) |
+| 2026-10-28 | Fault injection with our own in-process TCP proxy (`server/test/faulty-network.ts`): delay with jitter (order kept), cut, offline/online, freeze; one per client | Tests control each link directly; no daemon to install or start; runs in Vitest and CI as is; about 100 lines on `node:net`. A chaos test (3 clients, jittery links, cuts, an offline spell) ends identical with nothing lost: M2's done-when | Toxiproxy, the standard tool (a separate daemon to install in CI and start before tests, configured over HTTP; worth revisiting for Phase 2 benchmarks against deployed infrastructure); a WebSocket-level proxy that drops, reorders or duplicates single messages (impossible on one TCP connection, so it would test cases that can't happen); patching the client's WebSocket (misses server-side behaviour like heartbeats) |
 
 **Open decisions:** hosting (decide when the MVP is ready; a managed platform was the recommendation); when wiring Yjs, use `y-websocket`'s ready-made server instead of our own relay?
 
@@ -150,7 +152,7 @@ Yjs merges bytes in memory. Everything else is ours.
 |---|---|---|
 | 1 | **Persistence**: when to save, durability vs write load, log growth and compaction | Kill the server mid-typing, then measure loss and growth |
 | 2 | **Reconnect/resync**: duplicate or partial delivery, server restart, long-offline client | Fault-inject disconnects, then check identical docs and time the recovery |
-| 3 | **Fault-injection harness**: delay/drop/reorder/duplicate proxy plus convergence checker | Chaos run, check the docs never differ |
+| 3 | **Fault-injection harness**: delay/drop/reorder/duplicate proxy plus convergence checker. Built in M2 as delay, cut, offline and freeze (reorder and duplicate can't happen on one TCP connection; they matter again with several servers in Phase 2) | Chaos run, check the docs never differ |
 | 4 | **Room lifecycle and scaling**: load/evict rooms, memory per room, multi-server routing | Load test; watch memory |
 | 5 | **Presence**: ephemeral cursors, throttling, ghost-user cleanup, heartbeats | Cut a tab's network, time the ghost cursor |
 | 6 | **Latency/throughput**: batching vs responsiveness, big pastes, slow clients | p50/p99 end-to-end latency |
@@ -165,11 +167,12 @@ Also: collaborative undo/redo (each user undoes only their own edits) is subtle,
 
 | Part | Where | Tests |
 |---|---|---|
-| Sync server: Yjs sync and presence over WebSocket, rooms in memory, server-created first file, input validation, heartbeats, message size limit | `server/src/sync-server.ts` (started by `server/src/index.ts`) | `server/test/sync-server.test.ts` (30) |
+| Sync server: Yjs sync and presence over WebSocket, rooms in memory, server-created first file, input validation, heartbeats, message size limit | `server/src/sync-server.ts` (started by `server/src/index.ts`) | `server/test/sync-server.test.ts` (35) |
+| Faulty network (tests only): TCP proxy that delays, cuts, goes offline or freezes a client's link | `server/test/faulty-network.ts` | used by the sync server tests |
 | Room session: the client-side module the UI uses (join, files, people, status, change notifications) | `web/src/room/session.ts` | `web/src/room/session.test.ts` (6) |
 | UI: routing, room page, header, CodeMirror editor, guest identity | `web/src/App.tsx`, `web/src/pages/RoomPage.tsx`, `web/src/room/*.tsx`, `web/src/room/guest.ts` | `e2e/room.spec.ts` (5) + `e2e/smoke.spec.ts` |
 
 **Known gaps (planned):** nothing is saved, and empty rooms stay in memory until the server restarts; a restart while people are connected gives their room a second file (M3); a browser notices a dead server only after y-websocket's fixed 30s silence limit (M2); reconnect UX is the provider's default (M2); a change refused as too large stays only in that tab, and a reload loses it (warn before such a paste, M2); rooms have no total size cap, only a per-message one (M3/M11); the web bundle is 866 kB, needs code splitting (M10).
 
-**Next: rest of M2 reliability** (fault-injection proxy with convergence tests for offline edits, reconnecting UX). See `ROADMAP.md`.
+**Next: rest of M2 reliability** (reconnecting UX). See `ROADMAP.md`.
 

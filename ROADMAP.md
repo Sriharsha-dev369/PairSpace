@@ -18,7 +18,7 @@ M0 Relay ✅ ─► M1 Co-editing ─► M2 Reliability ─► M3 Persistence + 
 |---|---|---|---|
 | M0 | Relay server with rooms, tests, tooling | S | ✅ done |
 | M1 | Real-time co-editing (single file, anonymous) | L | ✅ done |
-| M2 | Reliability: heartbeats, reconnect, offline edits | M | in progress (heartbeats, size limit done) |
+| M2 | Reliability: heartbeats, reconnect, offline edits | M | in progress (heartbeats, size limit, fault-injection tests done; reconnect UX left) |
 | M3 | Persistence and database | L | |
 | M4 | Accounts (email + GitHub) | M | |
 | M5 | Dashboard and share links with roles | M | |

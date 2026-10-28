@@ -10,6 +10,7 @@ import * as syncProtocol from "y-protocols/sync";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 import { createSyncServer, type SyncServer } from "../src/sync-server";
+import { createFaultyNetwork, type FaultyNetwork } from "./faulty-network";
 
 // ---------- test helpers ----------
 
@@ -53,18 +54,28 @@ describe("sync server", () => {
   let server: SyncServer;
   let rawClients: RawClient[];
   let providers: WebsocketProvider[];
+  let links: FaultyNetwork[];
 
   beforeEach(async () => {
     server = await createSyncServer({ port: 0 });
     rawClients = [];
     providers = [];
+    links = [];
   });
 
   afterEach(async () => {
     for (const c of rawClients) c.close();
     for (const p of providers) p.destroy();
+    for (const link of links) await link.close();
     await server.close();
   });
+
+  // a network link to the server that misbehaves on command (one per client)
+  async function faultyLink(): Promise<FaultyNetwork> {
+    const link = await createFaultyNetwork(server.port);
+    links.push(link);
+    return link;
+  }
 
   // a plain WebSocket, for connection-level behavior (validation, room lifecycle, heartbeats)
   async function connectRaw(room: string, { answerPings = true } = {}): Promise<RawClient> {
@@ -100,12 +111,14 @@ describe("sync server", () => {
     return client;
   }
 
-  // a real Yjs client, exactly as the browser uses it
-  async function joinRoom(room: string): Promise<YjsClient> {
+  // a real Yjs client, exactly as the browser uses it, optionally connected through a faulty link
+  async function joinRoom(room: string, { via }: { via?: FaultyNetwork } = {}): Promise<YjsClient> {
     const doc = new Y.Doc();
-    // disableBc: in one process, BroadcastChannel would sync clients directly and bypass the server
-    const provider = new WebsocketProvider(`ws://localhost:${server.port}`, room, doc, {
+    const url = via?.url ?? `ws://localhost:${server.port}`;
+    const provider = new WebsocketProvider(url, room, doc, {
+      // in one process, BroadcastChannel would sync clients directly and bypass the server
       disableBc: true,
+      maxBackoffTime: 100, // reconnect within 100ms instead of up to 2.5s, to keep tests fast
     });
     providers.push(provider);
     await waitFor(() => provider.synced, `${room} to sync`);
@@ -113,6 +126,10 @@ describe("sync server", () => {
   }
 
   const text = (client: YjsClient) => client.doc.getText("probe").toString();
+
+  // every client holds every edit: their state vectors (summaries of who wrote what) match
+  const converged = (clients: YjsClient[]) =>
+    new Set(clients.map((c) => Y.encodeStateVector(c.doc).toString())).size === 1;
 
   const sees = (viewer: YjsClient, name: string) =>
     [...viewer.provider.awareness.getStates().values()].some((s) => s.user?.name === name);
@@ -427,6 +444,18 @@ describe("sync server", () => {
       // an unanswered connection is cut on the second heartbeat, so it would never hear five
       await waitFor(() => alice.messages.filter(isKeepalive).length >= 5, "five keepalives");
     });
+
+    it("cuts a connection that froze without closing, like a laptop going to sleep", async () => {
+      const link = await faultyLink();
+      const bob = await joinRoom("room1");
+      const alice = await joinRoom("room1", { via: link });
+      alice.provider.awareness.setLocalStateField("user", { name: "Alice" });
+      await waitFor(() => sees(bob, "Alice"), "bob to see alice");
+
+      link.freeze(); // no data and no close get through: only the heartbeat can notice
+
+      await waitFor(() => !sees(bob, "Alice"), "alice's presence to disappear for bob");
+    });
   });
 
   // ---------- message size limit ----------
@@ -463,10 +492,92 @@ describe("sync server", () => {
     });
   });
 
+  // ---------- unreliable network (through a proxy that delays, drops and cuts) ----------
+
+  describe("unreliable network", () => {
+    it("lets a disconnected client catch up on what it missed", async () => {
+      const link = await faultyLink();
+      const alice = await joinRoom("room1", { via: link });
+      const bob = await joinRoom("room1");
+      const carol = await joinRoom("room1"); // a witness: if carol has it, so does the server
+
+      link.offline();
+      await waitFor(() => !alice.provider.wsconnected, "alice to lose her connection");
+      bob.doc.getText("probe").insert(0, "written while alice was away");
+      await waitFor(() => text(carol) !== "", "the server to receive bob's edit");
+      link.online();
+
+      await waitFor(() => text(alice) === "written while alice was away", "alice to catch up");
+    });
+
+    it("merges what both people wrote while one of them was offline", async () => {
+      const link = await faultyLink();
+      const alice = await joinRoom("room1", { via: link });
+      const bob = await joinRoom("room1");
+      alice.doc.getText("probe").insert(0, "start. ");
+      await waitFor(() => text(bob) === "start. ", "bob to see the start");
+
+      link.offline();
+      await waitFor(() => !alice.provider.wsconnected, "alice to go offline");
+      alice.doc.getText("probe").insert(7, "alice offline. ");
+      bob.doc.getText("probe").insert(7, "bob online. ");
+      link.online();
+
+      await waitFor(() => converged([alice, bob]), "alice and bob to converge");
+      expect(text(alice)).toBe(text(bob));
+      expect(text(alice)).toContain("alice offline. ");
+      expect(text(alice)).toContain("bob online. ");
+    });
+
+    it("a slow link delays edits without losing any", async () => {
+      const link = await faultyLink();
+      const alice = await joinRoom("room1", { via: link });
+      const bob = await joinRoom("room1");
+      let firstArrival = 0;
+      bob.doc.on("update", () => {
+        firstArrival ||= Date.now();
+      });
+      link.delay(100);
+
+      const typedAt = Date.now();
+      for (const letter of "abc") alice.doc.getText("probe").insert(text(alice).length, letter);
+
+      await waitFor(() => text(bob) === "abc", "bob to see all of alice's typing");
+      expect(firstArrival - typedAt).toBeGreaterThanOrEqual(95); // timers can fire a few ms early
+    });
+
+    // the seed replays the edits and the fault schedule; network timing still varies per run
+    it("converges after slow links, dropped connections and an offline spell", async () => {
+      const seed = Date.now();
+      const random = seededRandom(seed);
+      const links = await Promise.all([faultyLink(), faultyLink(), faultyLink()]);
+      const clients = await Promise.all(links.map((via) => joinRoom("chaos", { via })));
+      let drops = 0;
+      for (const c of clients) c.provider.on("connection-close", () => drops++);
+      for (const link of links) link.delay(10, 40); // 10 to 50ms each way
+
+      let inserted = 0;
+      for (let step = 0; step < 60; step++) {
+        const t = clients[step % 3].doc.getText("probe");
+        const chunk = `${step % 3}${"x".repeat(Math.floor(random() * 3))}`;
+        t.insert(Math.floor(random() * (t.length + 1)), chunk);
+        inserted += chunk.length;
+        if (step % 10 === 5) links[Math.floor(random() * 3)].cut();
+        if (step === 20) links[1].offline();
+        if (step === 40) links[1].online();
+        await sleep(random() * 20); // pacing, not waiting: typing, deliveries and faults interleave
+      }
+
+      await waitFor(() => converged(clients), `everyone to converge (seed ${seed})`, 3000);
+      expect(new Set(clients.map(text)).size, `seed ${seed}`).toBe(1);
+      expect(text(clients[0]).length, `nothing lost (seed ${seed})`).toBe(inserted);
+      expect(drops, "the network really dropped connections").toBeGreaterThan(0);
+    });
+  });
+
   // ---------- known gaps: not built yet, tracked here so we don't forget ----------
 
   describe("not built yet", () => {
-    it.todo("lets a disconnected client catch up on what it missed");
     it.todo("unloads an empty room once its document is saved (M3)");
   });
 });
