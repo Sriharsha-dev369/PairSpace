@@ -22,9 +22,12 @@ async function waitFor(condition: () => boolean, what: string, timeoutMs = 1000)
 describe("room session", () => {
   let server: SyncServer;
   let sessions: RoomSession[];
+  let logged: string[];
+  const logCount = (word: string) => logged.filter((line) => line.includes(word)).length;
 
   beforeEach(async () => {
-    server = await createSyncServer({ port: 0 });
+    logged = [];
+    server = await createSyncServer({ port: 0, log: (line) => logged.push(line) });
     sessions = [];
   });
 
@@ -33,8 +36,14 @@ describe("room session", () => {
     await server.close();
   });
 
-  function join(room = "room1", user = alice): RoomSession {
-    const session = joinRoom({ serverUrl: `ws://localhost:${server.port}`, room, user });
+  // network: stands in for the browser's window, which fires "online" and "offline"
+  function join(room = "room1", user = alice, network = new EventTarget()): RoomSession {
+    const session = joinRoom({
+      serverUrl: `ws://localhost:${server.port}`,
+      room,
+      user,
+      networkEvents: network,
+    });
     sessions.push(session);
     return session;
   }
@@ -54,16 +63,59 @@ describe("room session", () => {
     await expect(session.synced).rejects.toThrow("room");
   });
 
-  it("tells the UI when the connection drops", async () => {
+  it("says it's reconnecting when the connection drops, and keeps saying so while it retries", async () => {
     const session = join();
     await session.synced;
-    let notified = 0;
-    session.subscribe(() => notified++);
+    const seen: string[] = []; // what the UI would show after each notification
+    session.subscribe(() => seen.push(session.status()));
 
     await server.close();
 
-    await waitFor(() => session.status() === "disconnected", "status to become disconnected");
-    expect(notified).toBeGreaterThan(0);
+    // one notification for the drop, then one per retry
+    await waitFor(() => seen.length >= 3, "the drop and two retries", 2000);
+    expect([...new Set(seen)]).toEqual(["reconnecting"]);
+  });
+
+  it("goes offline at once when the browser loses its network, and doesn't retry until it's back", async () => {
+    const network = new EventTarget();
+    const session = join("room1", alice, network);
+    await session.synced;
+    const seen: string[] = [];
+    session.subscribe(() => seen.push(session.status()));
+
+    network.dispatchEvent(new Event("offline"));
+
+    expect(seen.at(-1)).toBe("offline"); // at once, not after y-websocket's 30s silence rule
+    await waitFor(() => logCount("left") === 1, "the server to see the connection close");
+    await sleep(600); // longer than the provider's first reconnect delay (200ms)
+    expect(logCount("joined")).toBe(1);
+  });
+
+  it("reconnects as soon as the browser is back online", async () => {
+    const network = new EventTarget();
+    const session = join("room1", alice, network);
+    await session.synced;
+    network.dispatchEvent(new Event("offline"));
+    await waitFor(() => logCount("left") === 1, "the server to see the connection close");
+
+    network.dispatchEvent(new Event("online"));
+
+    await waitFor(() => session.status() === "connected", "the session to reconnect");
+    expect(logCount("joined")).toBe(2);
+  });
+
+  it("stops listening for the network once it has left the room", async () => {
+    const network = new EventTarget();
+    const session = join("room1", alice, network);
+    await session.synced;
+    session.leave();
+    await waitFor(() => logCount("left") === 1, "the server to see it leave");
+
+    network.dispatchEvent(new Event("online"));
+
+    await join("room1", bob).synced; // arrives after any reconnect the event would have caused
+    await sleep(50);
+    expect(logCount("joined")).toBe(2); // alice once, bob once
   });
 
   it("stops reconnecting and says so when a change is too large to sync", async () => {

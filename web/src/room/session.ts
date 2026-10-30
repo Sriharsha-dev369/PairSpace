@@ -2,8 +2,15 @@ import type { Awareness } from "y-protocols/awareness";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 
+// reconnecting: we were connected and the provider is retrying on its own
+// offline: the browser says there's no network, so we stopped trying until it's back
 // too-large: the server refused one of our changes as over its size limit, so we stopped retrying
-export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "too-large";
+export type ConnectionStatus =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "offline"
+  | "too-large";
 
 export interface User {
   name: string;
@@ -41,9 +48,15 @@ interface JoinOptions {
   serverUrl: string;
   room: string;
   user: User;
+  networkEvents?: EventTarget; // fires "online" and "offline": the browser's window, or a test's
 }
 
-export function joinRoom({ serverUrl, room, user }: JoinOptions): RoomSession {
+export function joinRoom({
+  serverUrl,
+  room,
+  user,
+  networkEvents = typeof window === "undefined" ? undefined : window,
+}: JoinOptions): RoomSession {
   const doc = new Y.Doc();
   // no cross-tab BroadcastChannel: every edit goes through the server, where it can be observed
   const provider = new WebsocketProvider(serverUrl, room, doc, {
@@ -59,13 +72,32 @@ export function joinRoom({ serverUrl, room, user }: JoinOptions): RoomSession {
   const notify = () => {
     for (const listener of listeners) listener();
   };
-  provider.on("status", notify);
+  let wasConnected = false;
+  provider.on("status", ({ status }) => {
+    if (status === "connected") wasConnected = true;
+    notify();
+  });
   awareness.on("change", notify);
   let tooLarge = false;
   provider.on("closed", ({ code }) => {
     tooLarge = code === MESSAGE_TOO_BIG;
     notify();
   });
+
+  // a dead wifi can leave the socket looking open for 30s, so believe the browser instead
+  let offline = false;
+  const goOffline = () => {
+    offline = true;
+    provider.disconnect();
+    notify();
+  };
+  const goOnline = () => {
+    offline = false;
+    provider.connect(); // now, rather than after the provider's backoff
+    notify();
+  };
+  networkEvents?.addEventListener("offline", goOffline);
+  networkEvents?.addEventListener("online", goOnline);
 
   const synced = new Promise<void>((resolve, reject) => {
     if (provider.synced) resolve();
@@ -96,8 +128,10 @@ export function joinRoom({ serverUrl, room, user }: JoinOptions): RoomSession {
         })),
     status: () => {
       if (tooLarge) return "too-large";
+      if (offline) return "offline";
       if (provider.wsconnected) return "connected";
-      return provider.wsconnecting ? "connecting" : "disconnected";
+      // one steady state across retries: the provider says nothing when a retry fails
+      return wasConnected ? "reconnecting" : "connecting";
     },
     files: () =>
       [...doc.getMap<Y.Map<unknown>>("files").entries()].map(([id, file]) => ({
@@ -105,6 +139,10 @@ export function joinRoom({ serverUrl, room, user }: JoinOptions): RoomSession {
         name: file.get("name") as string,
         content: file.get("content") as Y.Text,
       })),
-    leave: () => provider.destroy(),
+    leave: () => {
+      networkEvents?.removeEventListener("offline", goOffline);
+      networkEvents?.removeEventListener("online", goOnline);
+      provider.destroy();
+    },
   };
 }

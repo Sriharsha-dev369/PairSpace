@@ -116,3 +116,22 @@ test("the name label fades while the other person is idle and returns when they 
   await alice.keyboard.press("ArrowLeft");
   await expect(label).toHaveCSS("opacity", "1");
 });
+
+test("going offline shows it, and edits made offline reach the other person once back", async ({
+  browser,
+}) => {
+  const url = await newRoomUrl(browser);
+  const alice = await openRoomAs(browser, url);
+  const bob = await openRoomAs(browser, url);
+  const status = alice.getByTestId("connection-status");
+  await expect(status).toHaveText("Connected");
+
+  await alice.context().setOffline(true);
+  await expect(status).toHaveText("Offline");
+  await alice.locator(".cm-content").click();
+  await alice.keyboard.type("written offline");
+  await alice.context().setOffline(false);
+
+  await expect(status).toHaveText("Connected");
+  await expect(bob.locator(".cm-content")).toContainText("written offline");
+});
