@@ -4,11 +4,25 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { basicSetup } from "codemirror";
 import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { cursorLabels } from "./cursorLabels";
 import type { RoomFile } from "./session";
+import { syncSizeLimit } from "./syncSizeLimit";
+
+// half the server's 2 MiB message limit: on reconnect, all offline edits travel in one message
+const MAX_CHANGE_BYTES = 1024 * 1024;
+const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
+const refuseTooLarge = syncSizeLimit({
+  maxBytes: MAX_CHANGE_BYTES,
+  onRefused: (bytes) =>
+    toast.error("That paste is too large to sync", {
+      description: `It's ${megabytes(bytes)}; the limit is ${megabytes(MAX_CHANGE_BYTES)}. Paste it in smaller parts.`,
+    }),
+});
 
 // layered on top of oneDark: our colours and fonts, and name labels sitting exactly on cursors
 const theme = EditorView.theme(
@@ -70,6 +84,7 @@ export function Editor({ file, awareness }: Props) {
           basicSetup,
           javascript(),
           placeholder("Start typing. Everyone with this room's link sees it live."),
+          refuseTooLarge,
           theme, // before oneDark: earlier extensions take precedence
           oneDark,
           yCollab(file.content, awareness, { undoManager }),

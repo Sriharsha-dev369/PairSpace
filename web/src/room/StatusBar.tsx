@@ -7,10 +7,7 @@ export function StatusBar({ peopleCount }: { peopleCount: number }) {
         <Users size={12} />
         {peopleCount === 1 ? "1 person here" : `${peopleCount} people here`}
       </span>
-      <span className="flex items-center gap-4">
-        <span>Edits sync live</span>
-        <span>JavaScript</span>
-      </span>
+      <span>JavaScript</span>
     </footer>
   );
 }

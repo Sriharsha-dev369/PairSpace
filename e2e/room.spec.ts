@@ -164,3 +164,20 @@ test("closes without asking when every edit has synced", async ({ browser }) => 
   await closed;
   expect(dialogs).toEqual([]);
 });
+
+test("pasting something too large to sync says so, and the room keeps syncing", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"] });
+  const alice = await context.newPage();
+  await alice.goto(await newRoomUrl(browser));
+  await expect(alice.locator(".cm-content")).toBeVisible();
+  await alice.evaluate((text) => navigator.clipboard.writeText(text), "x".repeat(3 * 1024 * 1024));
+  await alice.locator(".cm-content").click();
+
+  await alice.keyboard.press("ControlOrMeta+V");
+
+  await expect(alice.getByText("That paste is too large to sync")).toBeVisible();
+  await expect(alice.locator(".cm-content")).not.toContainText("xxx");
+  await expect(alice.getByTestId("connection-status")).toHaveText("Connected");
+});

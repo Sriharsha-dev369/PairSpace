@@ -8,7 +8,7 @@ How the three files relate:
 | `CLAUDE.md` | Working instructions for Claude (commands, stack, workflow). Local only: it is in `.gitignore` |
 | `context.md` (this file) | *Where we are*: what was reasoned, decided and learned, and what's next |
 
-Status: M1 done (live co-editing, presence, cursors, tested end to end). M2 reliability in progress: heartbeats, message size limit and fault-injection tests done (M2's done-when met); reconnecting UX remains. Not deployed. Last updated 2026-10-28.
+Status: M1 done (live co-editing, presence, cursors, tested end to end). M2 reliability done: heartbeats, message size limit, fault-injection tests (M2's done-when), and reconnecting UX (steady Reconnecting/Offline states, leave-page warning for unsynced edits, paste guard). Next: M3. Not deployed. Last updated 2026-10-30.
 
 ---
 
@@ -90,6 +90,7 @@ Real-time collaborative code editor. Two (later N) people join a room via a shar
 | **WebSocket gaps** | Dead connections aren't always noticed (need heartbeats/ping-pong); no auto-reconnect; order only holds within one connection; each user holds a connection open; message format is ours to design |
 | **Heartbeat** | A peer that vanishes (sleep, wifi drop) never sends a TCP close, so its socket looks open for hours (a *half-open* connection). The server pings each connection every 10s and cuts one that didn't answer the previous ping. Browsers answer pings automatically, but page JS can't see them, so the server also sends a tiny keepalive message: y-websocket drops a connection it hears nothing on for 30s |
 | **What TCP guarantees** | Within one connection, bytes arrive complete, once and in order, or the connection dies. Packet loss shows up as delay (TCP resends) or a dead connection, never as a missing, repeated or reordered message. So the realistic faults to test are delay, a dropped connection, going offline, and a frozen (half-open) connection |
+| **Browser `offline`/`online` events** | The browser fires `offline` on `window` when the device has no network at all. An open WebSocket can keep looking open (no close arrives), so react to the event instead of waiting for the socket. `online` only means a network exists, not that the server is reachable |
 | **Alternatives to WebSocket** | Polling (delay + wasted requests), long polling (header overhead per message), SSE (server to browser only) |
 
 ### Sync
@@ -141,6 +142,9 @@ Moved here from `CLAUDE.md` (which now holds only working instructions). Append 
 | 2026-10-28 | Limit each message to 2 MiB (`maxMessageBytes`) with `ws`'s `maxPayload`, which closes with the standard code 1009 | `ws` checks a frame's declared length before reading it, so an oversize message is never buffered. The biggest legitimate message is a whole room re-sent after the server lost it (a restart before M3), so this allows rooms of about 1–1.5 MB of code | `ws`'s 100 MiB default (one client can make the server hold, apply and broadcast 100 MiB); checking size in our message handler (already buffered by then); 1 MB like Socket.IO's default (a big pasted file would fail); a custom 44xx code (`ws` sends 1009 itself) |
 | 2026-10-28 | The client treats close 1009 as permanent: it stops reconnecting and the header says "Change too large to sync" | y-websocket's default retries 1009, and every retry re-sends the same change, so it looped every ~200ms and never synced (seen in a test: 3 joins in 600ms) | The default retry; making the server send a 44xx code instead (not possible with `maxPayload`) |
 | 2026-10-28 | Fault injection with our own in-process TCP proxy (`server/test/faulty-network.ts`): delay with jitter (order kept), cut, offline/online, freeze; one per client | Tests control each link directly; no daemon to install or start; runs in Vitest and CI as is; about 100 lines on `node:net`. A chaos test (3 clients, jittery links, cuts, an offline spell) ends identical with nothing lost: M2's done-when | Toxiproxy, the standard tool (a separate daemon to install in CI and start before tests, configured over HTTP; worth revisiting for Phase 2 benchmarks against deployed infrastructure); a WebSocket-level proxy that drops, reorders or duplicates single messages (impossible on one TCP connection, so it would test cases that can't happen); patching the client's WebSocket (misses server-side behaviour like heartbeats) |
+| 2026-10-30 | The client listens for the browser's `offline`/`online` events: on `offline` it disconnects at once and shows "Offline"; on `online` it reconnects at once. After a drop the status stays "Reconnecting…" through every retry | With wifi gone, an open socket kept the header on "Connected" for up to 30s (seen in a browser test: Chromium's offline mode leaves the socket looking open). The provider emits `connecting` on each retry but nothing when one fails, so the old status flickered and never reassured | A client watchdog on the server's 10s keepalives (gains ~10s only for silent path failures, plus another timer); leaving y-websocket's 30s rule alone |
+| 2026-10-30 | Unsynced edits = edits made while not connected, cleared at the next `sync`. While any exist, the header says "your edits will sync when you're back" and closing the tab asks first (`beforeunload`) | Our server sends its sync step 1 on connect, so by the client's `sync` event its reply carrying those edits has been sent (TCP keeps order). No protocol change | Per-update acks from the server (protocol change; exact pending counts belong to M9's sync inspector); `y-indexeddb` to keep edits across reloads (a stale local copy could re-upload a room after it's deleted or access is revoked; revisit after M3/M5) |
+| 2026-10-30 | The editor refuses a typed, pasted or dropped change over 1 MiB (UTF-8, as Yjs sends it) and says so in a toast (`sonner`, shadcn/ui's toast) | Half the server's 2 MiB limit, because on reconnect all offline edits travel in one message. Without it, one big paste put the tab into "Change too large to sync" for good. Other people's changes (from Yjs) aren't limited | The server's 2 MiB (one more offline edit and the reconnect is refused); a dialog (blocks typing) |
 
 **Open decisions:** hosting (decide when the MVP is ready; a managed platform was the recommendation); when wiring Yjs, use `y-websocket`'s ready-made server instead of our own relay?
 
@@ -163,16 +167,17 @@ Also: collaborative undo/redo (each user undoes only their own edits) is subtle,
 
 ## 7. Current position and next steps
 
-**M1 is done.** Two people on the same room link co-edit one file live, with names, colours, labelled cursors and a connection status.
+**M1 and M2 are done.** Two people on the same room link co-edit one file live, with names, colours, labelled cursors and a connection status. Dead connections are noticed, offline edits merge on return, and the UI says when it's reconnecting or offline.
 
 | Part | Where | Tests |
 |---|---|---|
 | Sync server: Yjs sync and presence over WebSocket, rooms in memory, server-created first file, input validation, heartbeats, message size limit | `server/src/sync-server.ts` (started by `server/src/index.ts`) | `server/test/sync-server.test.ts` (35) |
 | Faulty network (tests only): TCP proxy that delays, cuts, goes offline or freezes a client's link | `server/test/faulty-network.ts` | used by the sync server tests |
-| Room session: the client-side module the UI uses (join, files, people, status, change notifications) | `web/src/room/session.ts` | `web/src/room/session.test.ts` (6) |
-| UI: routing, room page, header, CodeMirror editor, guest identity | `web/src/App.tsx`, `web/src/pages/RoomPage.tsx`, `web/src/room/*.tsx`, `web/src/room/guest.ts` | `e2e/room.spec.ts` (5) + `e2e/smoke.spec.ts` |
+| Room session: the client-side module the UI uses (join, files, people, status incl. reconnecting/offline, unsynced edits, change notifications) | `web/src/room/session.ts` | `web/src/room/session.test.ts` (10) |
+| Paste guard: CodeMirror filter refusing a change too large to sync | `web/src/room/syncSizeLimit.ts` | `web/src/room/syncSizeLimit.test.ts` (4) |
+| UI: routing, room page, header, CodeMirror editor, guest identity | `web/src/App.tsx`, `web/src/pages/RoomPage.tsx`, `web/src/room/*.tsx`, `web/src/room/guest.ts` | `e2e/room.spec.ts` (12) + `e2e/smoke.spec.ts` |
 
-**Known gaps (planned):** nothing is saved, and empty rooms stay in memory until the server restarts; a restart while people are connected gives their room a second file (M3); a browser notices a dead server only after y-websocket's fixed 30s silence limit (M2); reconnect UX is the provider's default (M2); a change refused as too large stays only in that tab, and a reload loses it (warn before such a paste, M2); rooms have no total size cap, only a per-message one (M3/M11); the web bundle is 866 kB, needs code splitting (M10).
+**Known gaps (planned):** nothing is saved, and empty rooms stay in memory until the server restarts; a restart while people are connected gives their room a second file (M3); losing wifi shows at once, but a silently dead server or path is noticed only after y-websocket's 30s silence limit; edits made offline live only in the tab until reconnect (closing it asks first; `y-indexeddb` after M3/M5); edits sent in the moments before a silent failure is noticed aren't counted as unsynced (they still sync on reconnect); each change is capped at 1 MiB, but many offline edits can still add up past the server's 2 MiB on reconnect, and rooms have no total size cap (M3/M11); the web bundle is 866 kB, needs code splitting (M10).
 
-**Next: rest of M2 reliability** (reconnecting UX). See `ROADMAP.md`.
+**Next: M3 persistence and database** (decisions to bring: database, recommendation Postgres, and the ORM/migration tool). See `ROADMAP.md`.
 
