@@ -118,6 +118,30 @@ describe("room session", () => {
     expect(logCount("joined")).toBe(2); // alice once, bob once
   });
 
+  it("counts only edits made while disconnected as unsynced, until they've synced", async () => {
+    const network = new EventTarget();
+    const mine = join("room1", alice, network);
+    const theirs = join("room1", bob);
+    await Promise.all([mine.synced, theirs.synced]);
+    const text = mine.files()[0].content;
+    const seen: boolean[] = []; // what the UI would show after each notification
+    mine.subscribe(() => seen.push(mine.unsyncedEdits()));
+
+    text.insert(0, "online ");
+    expect(mine.unsyncedEdits()).toBe(false);
+
+    network.dispatchEvent(new Event("offline"));
+    text.insert(text.length, "offline");
+    expect(seen.at(-1)).toBe(true);
+
+    network.dispatchEvent(new Event("online"));
+    await waitFor(() => seen.at(-1) === false, "the UI to be told the edits synced");
+    await waitFor(
+      () => theirs.files()[0].content.toString() === "online offline",
+      "bob to get the offline edit",
+    );
+  });
+
   it("stops reconnecting and says so when a change is too large to sync", async () => {
     await server.close();
     let joins = 0;

@@ -14,6 +14,7 @@ interface Props {
   roomId: string;
   status: ConnectionStatus;
   people: Person[];
+  unsyncedEdits: boolean;
 }
 
 const initials = (name: string) =>
@@ -41,7 +42,7 @@ function PersonChip({ person, testId }: { person: Person; testId: string }) {
   );
 }
 
-export function RoomHeader({ roomId, status, people }: Props) {
+export function RoomHeader({ roomId, status, people, unsyncedEdits }: Props) {
   const me = people.find((p) => p.isMe);
   const others = people.filter((p) => !p.isMe);
 
@@ -66,6 +67,11 @@ export function RoomHeader({ roomId, status, people }: Props) {
         <span className="flex items-center gap-2 text-xs text-muted">
           <span className={`h-2 w-2 rounded-full ${STATUS[status].dot}`} />
           <span data-testid="connection-status">{STATUS[status].label}</span>
+          {unsyncedEdits && (status === "offline" || status === "reconnecting") && (
+            <span data-testid="unsynced-hint" className="text-faint">
+              · your edits will sync when you're back
+            </span>
+          )}
         </span>
         <ShareButton />
       </div>

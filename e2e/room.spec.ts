@@ -1,6 +1,6 @@
 // End-to-end spec: real browsers, real web app, real sync server (started by playwright.config.ts).
 
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { type Browser, type Dialog, expect, type Page, test } from "@playwright/test";
 
 // each person gets their own browser context: separate storage, like two different computers
 async function openRoomAs(browser: Browser, url: string): Promise<Page> {
@@ -134,4 +134,33 @@ test("going offline shows it, and edits made offline reach the other person once
 
   await expect(status).toHaveText("Connected");
   await expect(bob.locator(".cm-content")).toContainText("written offline");
+});
+
+test("asks before closing a tab whose edits haven't synced", async ({ browser }) => {
+  const alice = await openRoomAs(browser, await newRoomUrl(browser));
+  await alice.context().setOffline(true);
+  await alice.locator(".cm-content").click();
+  await alice.keyboard.type("not synced yet");
+  await expect(alice.getByTestId("unsynced-hint")).toBeVisible();
+  const asked = new Promise<Dialog>((resolve) => alice.once("dialog", resolve));
+
+  await alice.close({ runBeforeUnload: true });
+
+  const dialog = await asked;
+  expect(dialog.type()).toBe("beforeunload");
+  await dialog.dismiss();
+});
+
+test("closes without asking when every edit has synced", async ({ browser }) => {
+  const alice = await openRoomAs(browser, await newRoomUrl(browser));
+  await alice.locator(".cm-content").click();
+  await alice.keyboard.type("synced");
+  const dialogs: Dialog[] = [];
+  alice.on("dialog", (dialog) => dialogs.push(dialog));
+  const closed = alice.waitForEvent("close");
+
+  await alice.close({ runBeforeUnload: true });
+
+  await closed;
+  expect(dialogs).toEqual([]);
 });

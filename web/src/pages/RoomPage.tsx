@@ -1,5 +1,5 @@
 import { Link2Off, Loader2, Plus } from "lucide-react";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { Link, useParams } from "react-router";
 import { Editor } from "../room/Editor";
 import { FileTabs } from "../room/FileTabs";
@@ -31,12 +31,21 @@ export function RoomPage() {
 }
 
 function Room({ roomId, session }: { roomId: string; session: RoomSession }) {
-  const { status, people } = useRoomState(session);
+  const { status, people, unsyncedEdits } = useRoomState(session);
   const [file] = session.files();
+
+  // edits that haven't synced exist only in this tab, so closing it would lose them
+  useEffect(() => {
+    const askFirst = (event: BeforeUnloadEvent) => {
+      if (session.unsyncedEdits()) event.preventDefault();
+    };
+    window.addEventListener("beforeunload", askFirst);
+    return () => window.removeEventListener("beforeunload", askFirst);
+  }, [session]);
 
   return (
     <div className="flex h-screen flex-col">
-      <RoomHeader roomId={roomId} status={status} people={people} />
+      <RoomHeader roomId={roomId} status={status} people={people} unsyncedEdits={unsyncedEdits} />
       <FileTabs fileName={file.name} />
       <main className="min-h-0 flex-1">
         <Editor file={file} awareness={session.awareness} />

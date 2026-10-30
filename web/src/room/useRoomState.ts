@@ -4,11 +4,13 @@ import type { ConnectionStatus, Person, RoomSession } from "./session";
 interface RoomState {
   status: ConnectionStatus;
   people: Person[];
+  unsyncedEdits: boolean;
 }
 
 const read = (session: RoomSession): RoomState => ({
   status: session.status(),
   people: session.people(),
+  unsyncedEdits: session.unsyncedEdits(),
 });
 
 // re-renders whenever the session reports a change in connection or presence

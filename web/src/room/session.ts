@@ -33,6 +33,7 @@ export interface RoomSession {
   awareness: Awareness;
   synced: Promise<void>; // resolves once the server's copy arrives; rejects if the room is refused
   status(): ConnectionStatus;
+  unsyncedEdits(): boolean; // edits made while disconnected that haven't been sent yet
   subscribe(listener: () => void): () => void; // called when status, people or files may have changed
   people(): Person[];
   files(): RoomFile[];
@@ -81,6 +82,20 @@ export function joinRoom({
   let tooLarge = false;
   provider.on("closed", ({ code }) => {
     tooLarge = code === MESSAGE_TOO_BIG;
+    notify();
+  });
+
+  // edits made while disconnected exist only in this tab until the next sync sends them
+  let unsynced = false;
+  doc.on("update", (_update, origin) => {
+    if (origin === provider || provider.wsconnected || unsynced) return;
+    unsynced = true;
+    notify();
+  });
+  provider.on("sync", (isSynced) => {
+    if (!isSynced || !unsynced) return;
+    // our server sends its step 1 first, so by now our reply carrying those edits has gone out
+    unsynced = false;
     notify();
   });
 
@@ -133,6 +148,7 @@ export function joinRoom({
       // one steady state across retries: the provider says nothing when a retry fails
       return wasConnected ? "reconnecting" : "connecting";
     },
+    unsyncedEdits: () => unsynced,
     files: () =>
       [...doc.getMap<Y.Map<unknown>>("files").entries()].map(([id, file]) => ({
         id,
