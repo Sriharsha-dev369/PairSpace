@@ -1,19 +1,26 @@
-import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { connect, DATABASE_URL } from "./db";
-import { rooms, roomUpdates } from "./schema";
+import { newLinkCode } from "./room-id";
+import { roomLinks, roomMembers, rooms, roomUpdates } from "./schema";
 import type { RoomStore, StoredChange } from "./sync-server";
 
 export interface HistoryEntry extends StoredChange {
   at: Date;
 }
 
+export type LinkRole = "editor" | "viewer";
+export type Role = "owner" | LinkRole;
+
 export interface RoomSummary {
   id: string;
   title: string;
+  role: Role; // mine: owner, or what I joined it as
   createdAt: Date;
   lastEditedAt: Date;
 }
+
+export type Access = { title: string; role: Role } | "no-room" | "no-access";
 
 export interface PostgresRoomStore extends RoomStore {
   // `state`: the room's first content, saved as its first change
@@ -21,12 +28,26 @@ export interface PostgresRoomStore extends RoomStore {
     id: string,
     room: { ownerId: string | null; title: string; state?: Uint8Array },
   ): Promise<void>;
-  listRooms(ownerId: string): Promise<RoomSummary[]>; // most recently edited first
+  listRooms(userId: string): Promise<RoomSummary[]>; // mine and shared with me, latest edit first
   renameRoom(id: string, ownerId: string, title: string): Promise<boolean>; // false: not theirs
   deleteRoom(id: string, ownerId: string): Promise<boolean>; // with its history; false: not theirs
   history(room: string): Promise<HistoryEntry[]>; // every change, oldest first (replay, M8)
+  // the room's active link for `role`, made if there's none; null if it isn't the owner's room
+  shareLink(id: string, ownerId: string, role: LinkRole): Promise<string | null>;
+  findLink(code: string): Promise<{ roomId: string; title: string; role: LinkRole } | null>;
+  // who may enter: the owner, a member, a holder of an active link for this room
+  access(id: string, who: { userId: string | null; linkCode: string | null }): Promise<Access>;
+  addMember(id: string, userId: string, role: LinkRole, linkCode: string | null): Promise<void>;
   close(): Promise<void>;
 }
+
+// an active (not revoked) link with this code, for this room if given
+const activeLink = (code: string, roomId?: string) =>
+  and(
+    eq(roomLinks.code, code),
+    isNull(roomLinks.revokedAt),
+    roomId === undefined ? undefined : eq(roomLinks.roomId, roomId),
+  );
 
 export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
   const { db, pool } = connect(url);
@@ -84,16 +105,21 @@ export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
       });
     },
 
-    async listRooms(ownerId) {
+    async listRooms(userId) {
       return db
         .select({
           id: rooms.id,
           title: rooms.title,
+          role: sql<Role>`case when ${rooms.ownerId} = ${userId} then 'owner' else ${roomMembers.role} end`,
           createdAt: rooms.createdAt,
           lastEditedAt: rooms.lastEditedAt,
         })
         .from(rooms)
-        .where(eq(rooms.ownerId, ownerId))
+        .leftJoin(
+          roomMembers,
+          and(eq(roomMembers.roomId, rooms.id), eq(roomMembers.userId, userId)),
+        )
+        .where(or(eq(rooms.ownerId, userId), eq(roomMembers.userId, userId)))
         .orderBy(desc(rooms.lastEditedAt), desc(rooms.createdAt));
     },
 
@@ -113,6 +139,72 @@ export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
         .where(and(eq(rooms.id, id), eq(rooms.ownerId, ownerId)))
         .returning({ id: rooms.id });
       return deleted.length > 0;
+    },
+
+    async shareLink(id, ownerId, role) {
+      const [room] = await db
+        .select({ id: rooms.id })
+        .from(rooms)
+        .where(and(eq(rooms.id, id), eq(rooms.ownerId, ownerId)));
+      if (!room) return null;
+      const [existing] = await db
+        .select({ code: roomLinks.code })
+        .from(roomLinks)
+        .where(
+          and(eq(roomLinks.roomId, id), eq(roomLinks.role, role), isNull(roomLinks.revokedAt)),
+        );
+      if (existing) return existing.code;
+      const code = newLinkCode();
+      await db.insert(roomLinks).values({ code, roomId: id, role });
+      return code;
+    },
+
+    async findLink(code) {
+      const [link] = await db
+        .select({ roomId: roomLinks.roomId, title: rooms.title, role: roomLinks.role })
+        .from(roomLinks)
+        .innerJoin(rooms, eq(rooms.id, roomLinks.roomId))
+        .where(activeLink(code));
+      return link ?? null;
+    },
+
+    async access(id, { userId, linkCode }) {
+      const [room] = await db
+        .select({ title: rooms.title, ownerId: rooms.ownerId })
+        .from(rooms)
+        .where(eq(rooms.id, id));
+      if (!room) return "no-room";
+      const { title } = room;
+      if (room.ownerId === null) return { title, role: "editor" }; // from before owners: open
+      if (userId !== null && room.ownerId === userId) return { title, role: "owner" };
+      const roles: LinkRole[] = [];
+      if (userId !== null) {
+        const [member] = await db
+          .select({ role: roomMembers.role })
+          .from(roomMembers)
+          .where(and(eq(roomMembers.roomId, id), eq(roomMembers.userId, userId)));
+        if (member) roles.push(member.role);
+      }
+      if (linkCode !== null) {
+        const [link] = await db
+          .select({ role: roomLinks.role })
+          .from(roomLinks)
+          .where(activeLink(linkCode, id));
+        if (link) roles.push(link.role);
+      }
+      if (roles.includes("editor")) return { title, role: "editor" };
+      if (roles.includes("viewer")) return { title, role: "viewer" };
+      return "no-access";
+    },
+
+    async addMember(id, userId, role, linkCode) {
+      await db
+        .insert(roomMembers)
+        .values({ roomId: id, userId, role, linkCode })
+        .onConflictDoUpdate({
+          target: [roomMembers.roomId, roomMembers.userId],
+          set: { role, linkCode },
+        });
     },
 
     async history(room) {

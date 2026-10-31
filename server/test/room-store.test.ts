@@ -192,3 +192,84 @@ describe("rooms and their owners", () => {
     expect(await store.load(id)).toBeNull();
   });
 });
+
+describe("sharing", () => {
+  it("makes one editor link per room, the same each time, and only for its owner", async () => {
+    const [owner, someoneElse] = [await newAccount(), await newAccount()];
+    const id = await newRoom(owner);
+
+    const code = await store.shareLink(id, owner, "editor");
+
+    expect(code).toMatch(/^[A-Za-z0-9_-]{22}$/); // 128 random bits
+    expect(await store.shareLink(id, owner, "editor")).toBe(code);
+    expect(await store.shareLink(id, someoneElse, "editor")).toBeNull();
+  });
+
+  it("tells which room a link opens", async () => {
+    const owner = await newAccount();
+    const id = await newRoom(owner);
+    const code = (await store.shareLink(id, owner, "editor")) ?? "";
+
+    expect(await store.findLink(code)).toEqual({ roomId: id, title: "Test room", role: "editor" });
+    expect(await store.findLink("made-up-code")).toBeNull();
+  });
+
+  it("lets the owner, members and link holders in, and nobody else", async () => {
+    const [owner, member, stranger] = [await newAccount(), await newAccount(), await newAccount()];
+    const id = await newRoom(owner);
+    const code = (await store.shareLink(id, owner, "editor")) ?? "";
+    const room = { title: "Test room" };
+
+    expect(await store.access(id, { userId: owner, linkCode: null })).toEqual({
+      ...room,
+      role: "owner",
+    });
+    expect(await store.access(id, { userId: stranger, linkCode: null })).toBe("no-access");
+    expect(await store.access(id, { userId: null, linkCode: code })).toEqual({
+      ...room,
+      role: "editor",
+    });
+    await store.addMember(id, member, "editor", code);
+    expect(await store.access(id, { userId: member, linkCode: null })).toEqual({
+      ...room,
+      role: "editor",
+    });
+    expect(
+      await store.access(`room-${crypto.randomUUID()}`, { userId: owner, linkCode: null }),
+    ).toBe("no-room");
+  });
+
+  it("refuses a link for another room", async () => {
+    const owner = await newAccount();
+    const [mine, other] = [await newRoom(owner), await newRoom(owner)];
+    const otherCode = (await store.shareLink(other, owner, "editor")) ?? "";
+
+    expect(await store.access(mine, { userId: null, linkCode: otherCode })).toBe("no-access");
+  });
+
+  it("lets anyone into a room from before rooms had owners", async () => {
+    const id = await newRoom(null);
+
+    expect(await store.access(id, { userId: null, linkCode: null })).toEqual({
+      title: "Test room",
+      role: "editor",
+    });
+  });
+
+  it("lists rooms shared with a member next to their own, with their role", async () => {
+    const [owner, member] = [await newAccount(), await newAccount()];
+    const shared = await newRoom(owner);
+    const own = await newRoom(member);
+    await store.addMember(shared, member, "editor", await store.shareLink(shared, owner, "editor"));
+
+    const listed = await store.listRooms(member);
+
+    expect(listed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: own, role: "owner" }),
+        expect.objectContaining({ id: shared, role: "editor" }),
+      ]),
+    );
+    expect(listed).toHaveLength(2);
+  });
+});

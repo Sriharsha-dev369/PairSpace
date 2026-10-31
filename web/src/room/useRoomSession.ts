@@ -9,11 +9,11 @@ export type RoomJoin =
   | { state: "refused"; code: number }; // the server won't let us in (see RoomRefused)
 
 // joins the room for as long as the component is mounted
-export function useRoomSession(roomId: string, user: User): RoomJoin {
+export function useRoomSession(roomId: string, user: User, link?: string): RoomJoin {
   const [join, setJoin] = useState<RoomJoin>({ state: "connecting" });
 
   useEffect(() => {
-    const joined = joinRoom({ serverUrl: SYNC_URL, room: roomId, user });
+    const joined = joinRoom({ serverUrl: SYNC_URL, room: roomId, user, link });
     let active = true;
     joined.synced.then(
       () => active && setJoin({ state: "ready", session: joined }),
@@ -25,7 +25,7 @@ export function useRoomSession(roomId: string, user: User): RoomJoin {
       joined.leave();
       setJoin({ state: "connecting" });
     };
-  }, [roomId, user]);
+  }, [roomId, user, link]);
 
   return join;
 }

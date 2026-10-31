@@ -150,6 +150,25 @@ describe("room session", () => {
     );
   });
 
+  it("joins through a share link, which the server checks", async () => {
+    await server.close();
+    // a server that lets in only holders of the link "secret-code"
+    server = await createSyncServer({
+      port: 0,
+      admit: async (request) =>
+        new URL(request.url ?? "/", "http://localhost").searchParams.get("link") === "secret-code"
+          ? { member: null, role: "editor" }
+          : { refused: "no-access" },
+    });
+    const url = `ws://localhost:${server.port}`;
+    const withLink = joinRoom({ serverUrl: url, room: "room1", user: alice, link: "secret-code" });
+    const without = joinRoom({ serverUrl: url, room: "room1", user: bob });
+    sessions.push(withLink, without);
+
+    await withLink.synced;
+    await expect(without.synced).rejects.toMatchObject({ code: 4403 });
+  });
+
   it("says so when the room is deleted while you're in it, and stops reconnecting", async () => {
     const session = join();
     await session.synced;

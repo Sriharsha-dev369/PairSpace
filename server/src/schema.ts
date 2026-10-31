@@ -1,4 +1,13 @@
-import { bigint, boolean, customType, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  boolean,
+  customType,
+  index,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 
 // Postgres's binary type: Yjs changes are bytes (Drizzle has no built-in column for it)
 const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
@@ -107,4 +116,41 @@ export const verifications = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("verifications_identifier_idx").on(t.identifier)],
+);
+
+// ---------- sharing ----------
+
+// a share link: whoever holds the code gets in with its role (until it's revoked, 5.3)
+export const roomLinks = pgTable(
+  "room_links",
+  {
+    code: text("code").primaryKey(), // the secret in /join/<code>: 128 random bits
+    roomId: text("room_id")
+      .notNull()
+      .references(() => rooms.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["editor", "viewer"] }).notNull(),
+    createdAt: createdAt(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("room_links_room_id_idx").on(t.roomId)],
+);
+
+// signed-in people who joined a room through a link: the plain address works for them after
+export const roomMembers = pgTable(
+  "room_members",
+  {
+    roomId: text("room_id")
+      .notNull()
+      .references(() => rooms.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["editor", "viewer"] }).notNull(),
+    linkCode: text("link_code").references(() => roomLinks.code, { onDelete: "cascade" }), // how
+    joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.roomId, t.userId] }),
+    index("room_members_user_id_idx").on(t.userId),
+  ],
 );

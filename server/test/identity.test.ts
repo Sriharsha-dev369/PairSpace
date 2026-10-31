@@ -55,8 +55,9 @@ async function signUp(name: string): Promise<Member> {
   return { id: user.id, cookie };
 }
 
-// a Yjs client as the browser runs it, showing `displayName`; members also send their cookie
-async function join(displayName: string, member?: Member) {
+// a Yjs client as the browser runs it, showing `displayName`; members also send their cookie,
+// and anyone opening a share link sends its code
+async function join(displayName: string, member?: Member, link?: string) {
   // browsers send cookies with the WebSocket request by themselves; in Node we add them
   class BrowserWebSocket extends WebSocket {
     constructor(url: string, protocols?: string | string[]) {
@@ -68,6 +69,7 @@ async function join(displayName: string, member?: Member) {
     disableBc: true,
     maxBackoffTime: 100,
     WebSocketPolyfill: BrowserWebSocket as unknown as typeof globalThis.WebSocket,
+    params: link ? { link } : {},
   });
   provider.awareness.setLocalStateField("user", { name: displayName });
   providers.push(provider);
@@ -84,9 +86,10 @@ function createRoom(owner?: Member) {
   });
 }
 
-// how the server closes a plain connection to the room (with a member's cookie, if given)
-function closeCode(member?: Member): Promise<number> {
-  const socket = new WebSocket(`ws://localhost:${app.port}/${room}`, {
+// how the server closes a plain connection to the room (with a member's cookie and a link code)
+function closeCode(member?: Member, link?: string): Promise<number> {
+  const query = link ? `?link=${encodeURIComponent(link)}` : "";
+  const socket = new WebSocket(`ws://localhost:${app.port}/${room}${query}`, {
     headers: member ? { cookie: member.cookie } : {},
   });
   return new Promise((resolve) => socket.on("close", (code) => resolve(code)));
@@ -121,15 +124,50 @@ describe("who connects", () => {
     expect(await store.load(room)).toBeNull();
   });
 
-  it("lets a guest join a room that exists", async () => {
-    const member = await signUp("Alice");
-    await createRoom(member);
-    const alice = await join("Alice", member);
-    alice.probe.insert(0, "made by a member");
+  it("lets the owner in, and turns away anyone without access: a member or a guest", async () => {
+    const [alice, bob] = [await signUp("Alice"), await signUp("Bob")];
+    await createRoom(alice);
 
-    const guest = await join("Gus");
+    await join("Alice", alice);
 
-    await waitFor(() => guest.probe.toString() === "made by a member", "the guest to see it");
+    expect(await closeCode(bob)).toBe(4403); // 44xx: clients don't retry
+    expect(await closeCode()).toBe(4403);
+  });
+
+  it("lets a guest with a share link in, to edit", async () => {
+    const alice = await signUp("Alice");
+    await createRoom(alice);
+    const link = (await store.shareLink(room, alice.id, "editor")) ?? "";
+    const owner = await join("Alice", alice);
+
+    const guest = await join("Gus", undefined, link);
+    guest.probe.insert(0, "from the guest");
+
+    await waitFor(() => owner.probe.toString() === "from the guest", "alice to see it");
+  });
+
+  it("remembers a signed-in person who joined by link: the address alone works next time", async () => {
+    const [alice, bob] = [await signUp("Alice"), await signUp("Bob")];
+    await createRoom(alice);
+    const link = (await store.shareLink(room, alice.id, "editor")) ?? "";
+    await join("Bob", bob, link);
+
+    await join("Bob", bob); // no link this time
+  });
+
+  it("refuses a made-up link, and a link to another room", async () => {
+    const alice = await signUp("Alice");
+    const otherRoom = `room-${crypto.randomUUID()}`;
+    await store.createRoom(otherRoom, {
+      ownerId: alice.id,
+      title: "Other",
+      state: newRoomDocument(),
+    });
+    await createRoom(alice);
+    const otherLink = (await store.shareLink(otherRoom, alice.id, "editor")) ?? "";
+
+    expect(await closeCode(undefined, "made-up-code")).toBe(4403);
+    expect(await closeCode(undefined, otherLink)).toBe(4403);
   });
 
   it("saves a member's changes under their account, whatever name their browser shows", async () => {
@@ -167,7 +205,7 @@ describe("who connects", () => {
 
   it("treats a signed-out session as a guest", async () => {
     const alice = await signUp("Alice Account");
-    await createRoom(alice);
+    await createRoom(); // from before owners: open to anyone, so the guest gets in
     await fetch(`http://localhost:${app.port}/api/auth/sign-out`, {
       method: "POST",
       headers: { origin: WEB_ORIGIN, "content-type": "application/json", cookie: alice.cookie },
@@ -184,7 +222,7 @@ describe("who connects", () => {
   // two loads of one room at once would make two copies of it, splitting the people in it
   it("puts two members who open a room at the same moment in the same room", async () => {
     const [alice, bob] = await Promise.all([signUp("Alice"), signUp("Bob")]);
-    await createRoom(alice);
+    await createRoom(); // open to both
 
     const [hers, his] = await Promise.all([join("Alice", alice), join("Bob", bob)]);
 

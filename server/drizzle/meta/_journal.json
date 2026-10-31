@@ -36,6 +36,13 @@
       "when": 1793445519420,
       "tag": "0004_room_owners_and_titles",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793450512558,
+      "tag": "0005_sharing",
+      "breakpoints": true
     }
   ]
 }

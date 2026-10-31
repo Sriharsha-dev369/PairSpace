@@ -16,6 +16,8 @@ const STATUS: Record<ConnectionStatus, { label: string; dot: string }> = {
 
 interface Props {
   roomId: string;
+  title?: string; // until it loads, the room's id stands in
+  canShare: boolean; // only the owner makes share links
   status: ConnectionStatus;
   people: Person[];
   unsyncedEdits: boolean;
@@ -65,10 +67,13 @@ const ACCOUNT_BUTTON =
 
 // members sign out here; guests sign in and come straight back to this room
 function AccountButton({ isMember }: { isMember: boolean }) {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation(); // search keeps a share link's code
   if (!isMember) {
     return (
-      <Link to={`/sign-in?next=${encodeURIComponent(pathname)}`} className={ACCOUNT_BUTTON}>
+      <Link
+        to={`/sign-in?next=${encodeURIComponent(pathname + search)}`}
+        className={ACCOUNT_BUTTON}
+      >
         <LogIn size={14} />
         Sign in
       </Link>
@@ -77,7 +82,15 @@ function AccountButton({ isMember }: { isMember: boolean }) {
   return <SignOutButton className={ACCOUNT_BUTTON} />;
 }
 
-export function RoomHeader({ roomId, status, people, unsyncedEdits, isMember }: Props) {
+export function RoomHeader({
+  roomId,
+  title,
+  canShare,
+  status,
+  people,
+  unsyncedEdits,
+  isMember,
+}: Props) {
   const me = people.find((p) => p.isMe);
   const others = people.filter((p) => !p.isMe);
 
@@ -85,7 +98,12 @@ export function RoomHeader({ roomId, status, people, unsyncedEdits, isMember }: 
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
       <Logo />
       <span className="text-faint">/</span>
-      <span className="font-mono text-xs text-muted">{roomId}</span>
+      <span
+        data-testid="room-title"
+        className={title ? "truncate text-sm font-medium" : "font-mono text-xs text-muted"}
+      >
+        {title ?? roomId}
+      </span>
 
       <div className="ml-auto flex items-center gap-2">
         {others.length === 0 && (
@@ -109,7 +127,7 @@ export function RoomHeader({ roomId, status, people, unsyncedEdits, isMember }: 
           )}
         </span>
         <AccountButton isMember={isMember} />
-        <ShareButton />
+        {canShare && <ShareButton roomId={roomId} title={title ?? roomId} />}
       </div>
     </header>
   );

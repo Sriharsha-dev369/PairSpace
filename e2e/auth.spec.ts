@@ -1,7 +1,7 @@
 // End-to-end spec for accounts: signing up, in and out, and what guests and members can do.
 
 import { expect, test } from "@playwright/test";
-import { createRoom, memberBrowser, newEmail, PASSWORD } from "./members";
+import { createRoom, memberBrowser, newEmail, PASSWORD, shareLink } from "./members";
 
 test("signing up takes you to your rooms, and you're in them under your account name", async ({
   page,
@@ -61,12 +61,12 @@ test("a guest signing in from a room comes back to it under their account name",
   browser,
 }) => {
   const ownerBrowser = await memberBrowser(browser);
+  const roomId = await createRoom(ownerBrowser);
   const owner = await ownerBrowser.newPage();
-  await owner.goto(`/r/${await createRoom(ownerBrowser)}`);
+  await owner.goto(`/r/${roomId}`);
   await expect(owner.locator(".cm-content")).toBeVisible();
-  const roomUrl = owner.url();
   const guest = await (await browser.newContext()).newPage();
-  await guest.goto(roomUrl);
+  await guest.goto(await shareLink(ownerBrowser, roomId));
   await expect(guest.getByText("guest", { exact: true })).toBeVisible();
 
   await guest.getByRole("link", { name: "Sign in" }).click();
@@ -76,7 +76,7 @@ test("a guest signing in from a room comes back to it under their account name",
   await guest.getByLabel("Password").fill(PASSWORD);
   await guest.getByRole("button", { name: "Create account" }).click();
 
-  await expect(guest).toHaveURL(roomUrl);
+  await expect(guest).toHaveURL(new RegExp(`/r/${roomId}`));
   await expect(guest.getByTestId("my-name")).toHaveText("Grace Hopper");
   await expect(owner.getByTestId("other-person")).toHaveText(["Grace Hopper"]);
 });
@@ -85,7 +85,7 @@ test("a link to a room that doesn't exist says so", async ({ page }) => {
   await page.goto("/r/nobodymadethis");
 
   await expect(page.getByText("This room doesn't exist")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Sign in to start a room" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
 });
 
 test("the GitHub button takes you to GitHub's sign-in", async ({ page }) => {

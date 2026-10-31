@@ -53,6 +53,7 @@ export class RoomRefused extends Error {
 }
 
 export const ROOM_NOT_FOUND = 4404;
+export const NO_ACCESS = 4403;
 const ROOM_DELETED = 4410;
 
 const MESSAGE_TOO_BIG = 1009; // standard close code; every retry would re-send the same change
@@ -65,6 +66,7 @@ interface JoinOptions {
   room: string;
   user: User;
   networkEvents?: EventTarget; // fires "online" and "offline": the browser's window, or a test's
+  link?: string; // a share link's code: how someone without access of their own gets in
 }
 
 export function joinRoom({
@@ -72,11 +74,13 @@ export function joinRoom({
   room,
   user,
   networkEvents = typeof window === "undefined" ? undefined : window,
+  link,
 }: JoinOptions): RoomSession {
   const doc = new Y.Doc();
   // no cross-tab BroadcastChannel: every edit goes through the server, where it can be observed
   const provider = new WebsocketProvider(serverUrl, room, doc, {
     disableBc: true,
+    params: link ? { link } : {}, // sent on every (re)connect: the server checks it each time
     shouldReconnect: ({ code }) => code !== MESSAGE_TOO_BIG && !isPermanentRefusal(code),
   });
   const { awareness } = provider;

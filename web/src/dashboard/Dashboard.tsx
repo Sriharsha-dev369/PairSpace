@@ -13,6 +13,7 @@ import { timeAgo } from "./timeAgo";
 interface RoomSummary {
   id: string;
   title: string;
+  role: "owner" | "editor" | "viewer"; // mine, or shared with me
   lastEditedAt: string;
 }
 
@@ -159,10 +160,18 @@ function RoomRow({ room, onChanged }: { room: RoomSummary; onChanged: () => void
         )}
         <p className="mt-0.5 text-xs text-faint">Edited {timeAgo(room.lastEditedAt)}</p>
       </div>
-      <IconButton label="Rename" onClick={() => setRenaming(true)}>
-        <Pencil size={14} />
-      </IconButton>
-      <DeleteRoomButton room={room} onDeleted={onChanged} />
+      {room.role === "owner" ? (
+        <>
+          <IconButton label="Rename" onClick={() => setRenaming(true)}>
+            <Pencil size={14} />
+          </IconButton>
+          <DeleteRoomButton room={room} onDeleted={onChanged} />
+        </>
+      ) : (
+        <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">
+          Shared with you
+        </span>
+      )}
     </li>
   );
 }

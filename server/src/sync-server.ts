@@ -27,6 +27,13 @@ export interface Member {
   name: string;
 }
 
+export type Role = "owner" | "editor" | "viewer";
+
+// who may enter a room and as what, decided before the room is loaded
+export type Admission =
+  | { member: Member | null; role: Role } // member null: a guest
+  | { refused: "no-room" | "no-access" };
+
 export interface LoadedRoom {
   state: Uint8Array; // the latest snapshot merged with every change after it
   replayed: number; // how many changes came after the snapshot
@@ -44,9 +51,9 @@ interface Options {
   port?: number; // 0 = let the OS pick a free port (used by tests)
   server?: Server; // instead of a port: share an existing HTTP server's
   store?: RoomStore;
-  // who a connection belongs to, from its upgrade request (session cookie); null = a guest.
-  // Without it, everyone is treated alike and may create rooms
-  identify?: (request: IncomingMessage) => Promise<Member | null>;
+  // who a connection belongs to and what it may do, from its upgrade request (session cookie,
+  // share link). Without it (tests), everyone is a guest editor
+  admit?: (request: IncomingMessage, room: string) => Promise<Admission>;
   heartbeatMs?: number;
   saveDelayMs?: number;
   snapshotEvery?: number;
@@ -84,6 +91,7 @@ const CLOSE_INVALID_ROOM = 4400;
 const CLOSE_MALFORMED = 1007; // standard WebSocket code for "invalid payload data"
 const CLOSE_TRY_AGAIN = 1011; // standard "server error": clients retry it
 const CLOSE_NO_ROOM = 4404; // no such room (rooms are created from the dashboard, not by opening one)
+const CLOSE_NO_ACCESS = 4403; // the room exists, but you need a share link (or to be its owner)
 const CLOSE_DELETED = 4410; // the owner deleted the room while you were in it
 
 // y-websocket clients drop a connection they hear nothing on for 30s, so beat well inside that
@@ -145,7 +153,7 @@ export function createSyncServer({
   port,
   server,
   store,
-  identify,
+  admit,
   heartbeatMs = HEARTBEAT_MS,
   saveDelayMs = SAVE_DELAY_MS,
   snapshotEvery = SNAPSHOT_EVERY,
@@ -305,7 +313,7 @@ export function createSyncServer({
   }
 
   // puts a connection in its room, and returns what to do with each message it sends
-  function admit(
+  function enter(
     socket: WebSocket,
     name: string,
     room: Room,
@@ -416,7 +424,16 @@ export function createSyncServer({
 
     void (async () => {
       try {
-        const member = identify ? await identify(req) : null;
+        const admission = admit
+          ? await admit(req, name)
+          : ({ member: null, role: "editor" } as const);
+        if ("refused" in admission) {
+          say(`refused: ${admission.refused} for "${name}"`);
+          const code = admission.refused === "no-room" ? CLOSE_NO_ROOM : CLOSE_NO_ACCESS;
+          socket.close(code, admission.refused === "no-room" ? "room not found" : "no access");
+          return;
+        }
+        const { member } = admission;
         const room = await getRoom(name);
         if (socket.readyState !== WebSocket.OPEN) return; // left while the room was opening
         if (!room || room.dropped) {
@@ -424,7 +441,7 @@ export function createSyncServer({
           socket.close(CLOSE_NO_ROOM, "room not found");
           return;
         }
-        receive = admit(socket, name, room, member, say);
+        receive = enter(socket, name, room, member, say);
         for (const data of early) receive(data);
       } catch (err) {
         say(`couldn't open "${name}", turning away: ${(err as Error).message}`);

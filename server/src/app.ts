@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import { createAuth, type GitHubApp } from "./auth";
 import { DATABASE_URL } from "./db";
 import { openRoomStore } from "./room-store";
-import { roomsApi } from "./rooms-api";
+import { linksApi, roomsApi } from "./rooms-api";
 import { createSyncServer, type SyncServer } from "./sync-server";
 
 // where the web app runs in development (Vite); deployments set WEB_ORIGIN
@@ -45,6 +45,7 @@ export async function startApp({
     "/api/rooms",
     roomsApi({ auth, store, webOrigin, dropRoom: async (id) => sync?.dropRoom(id) }),
   );
+  api.route("/api/links", linksApi(store));
 
   const http = await new Promise<Server>((resolve) => {
     const server = serve({ fetch: api.fetch, port }, () => resolve(server as Server));
@@ -54,9 +55,19 @@ export async function startApp({
     server: http,
     store,
     log,
-    identify: async (request) => {
+    // who's connecting (session cookie), and through which share link (?link=) if any
+    admit: async (request, room) => {
       const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
-      return session && { id: session.user.id, name: session.user.name };
+      const member = session && { id: session.user.id, name: session.user.name };
+      const linkCode = new URL(request.url ?? "/", "http://localhost").searchParams.get("link");
+      const access = await store.access(room, { userId: member?.id ?? null, linkCode });
+      if (access === "no-room" || access === "no-access") return { refused: access };
+      // a signed-in person who came in by link is remembered: next time the address is enough
+      if (member && linkCode && access.role !== "owner") {
+        const link = await store.findLink(linkCode);
+        if (link?.roomId === room) await store.addMember(room, member.id, link.role, linkCode);
+      }
+      return { member, role: access.role };
     },
   });
 

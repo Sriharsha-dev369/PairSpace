@@ -58,9 +58,11 @@ async function createRoom(cookie: string, title?: string): Promise<{ id: string;
 const listRooms = async (cookie: string): Promise<{ id: string; title: string }[]> =>
   (await api("GET", "", { cookie })).json();
 
-// how the server ends a connection to a room (or never does, within a second)
-function connectTo(room: string) {
-  const socket = new WebSocket(`ws://localhost:${app.port}/${room}`);
+// a connection to a room (as a member, if given a cookie), and how the server ends it
+function connectTo(room: string, cookie?: string) {
+  const socket = new WebSocket(`ws://localhost:${app.port}/${room}`, {
+    headers: cookie ? { cookie } : {},
+  });
   const opened = new Promise((resolve) => socket.on("open", resolve));
   const closed = new Promise<number>((resolve) => socket.on("close", (code) => resolve(code)));
   return { opened, closed };
@@ -130,13 +132,13 @@ describe("rooms API", () => {
   it("disconnects everyone in a deleted room, and its address stops working", async () => {
     const alice = await signUp();
     const { id } = await createRoom(alice);
-    const inside = connectTo(id);
+    const inside = connectTo(id, alice); // the owner, in the room
     await inside.opened;
 
     await api("DELETE", `/${id}`, { cookie: alice });
 
     expect(await inside.closed).toBe(4410); // "room deleted"; clients don't retry 44xx
-    expect(await connectTo(id).closed).toBe(4404);
+    expect(await connectTo(id, alice).closed).toBe(4404);
   });
 
   it("is only for members", async () => {
@@ -156,5 +158,72 @@ describe("rooms API", () => {
 
     expect(forged.status).toBe(403);
     expect(await listRooms(alice)).toEqual([]);
+  });
+});
+
+describe("sharing API", () => {
+  const shareLink = async (cookie: string, id: string) =>
+    api("POST", `/${id}/links`, { cookie, body: { role: "editor" } });
+
+  // a signed-in browser opening a share link joins the room (the server records it then)
+  function openLink(cookie: string, room: string, code: string) {
+    const socket = new WebSocket(`ws://localhost:${app.port}/${room}?link=${code}`, {
+      headers: { cookie },
+    });
+    return new Promise<void>((resolve) => socket.once("message", () => resolve(socket.close())));
+  }
+
+  it("gives the owner a share link, the same each time, and nobody else", async () => {
+    const [alice, bob] = [await signUp("Alice"), await signUp("Bob")];
+    const { id } = await createRoom(alice);
+
+    const first = await (await shareLink(alice, id)).json();
+    const again = await (await shareLink(alice, id)).json();
+
+    expect(first).toEqual({ code: expect.stringMatching(/^[A-Za-z0-9_-]{22}$/), role: "editor" });
+    expect(again.code).toBe(first.code);
+    expect((await shareLink(bob, id)).status).toBe(404);
+  });
+
+  it("tells anyone which room a link opens, and 404 for a made-up one", async () => {
+    const alice = await signUp();
+    const { id } = await createRoom(alice, "Pairing");
+    const { code } = await (await shareLink(alice, id)).json();
+    const lookUp = (link: string) => fetch(`http://localhost:${app.port}/api/links/${link}`);
+
+    expect(await (await lookUp(code)).json()).toEqual({
+      roomId: id,
+      title: "Pairing",
+      role: "editor",
+    });
+    expect((await lookUp("made-up-code")).status).toBe(404);
+  });
+
+  it("tells people with access a room's title and their role, and nobody else", async () => {
+    const [alice, bob] = [await signUp("Alice"), await signUp("Bob")];
+    const { id } = await createRoom(alice, "Pairing");
+    const { code } = await (await shareLink(alice, id)).json();
+
+    expect(await (await api("GET", `/${id}`, { cookie: alice })).json()).toEqual({
+      id,
+      title: "Pairing",
+      role: "owner",
+    });
+    expect((await (await api("GET", `/${id}?link=${code}`)).json()).role).toBe("editor"); // a guest
+    expect((await api("GET", `/${id}`, { cookie: bob })).status).toBe(404);
+    expect((await api("GET", `/${id}`)).status).toBe(404);
+  });
+
+  it("lists rooms shared with me, which I can't rename or delete", async () => {
+    const [alice, bob] = [await signUp("Alice"), await signUp("Bob")];
+    const { id } = await createRoom(alice, "Alice's room");
+    const { code } = await (await shareLink(alice, id)).json();
+    await openLink(bob, id, code);
+
+    expect(await listRooms(bob)).toEqual([expect.objectContaining({ id, role: "editor" })]);
+    expect((await api("PATCH", `/${id}`, { cookie: bob, body: { title: "Mine" } })).status).toBe(
+      404,
+    );
+    expect((await api("DELETE", `/${id}`, { cookie: bob })).status).toBe(404);
   });
 });

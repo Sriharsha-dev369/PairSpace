@@ -1,36 +1,46 @@
-import { Link2Off, Loader2, SearchX, Trash2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Link2Off, Loader2, Lock, SearchX, Trash2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { Link, useParams } from "react-router";
+import { useParams, useSearchParams } from "react-router";
+import { api } from "../api";
 import { type Member, useMember } from "../auth/useMember";
 import { Editor } from "../room/Editor";
 import { FileTabs } from "../room/FileTabs";
 import { guestIdentity, memberIdentity } from "../room/identity";
 import { RoomHeader } from "../room/RoomHeader";
 import { StatusBar } from "../room/StatusBar";
-import { ROOM_NOT_FOUND, type RoomSession } from "../room/session";
+import { NO_ACCESS, ROOM_NOT_FOUND, type RoomSession } from "../room/session";
 import { useRoomSession } from "../room/useRoomSession";
 import { useRoomState } from "../room/useRoomState";
-import { Card, FullScreen } from "../ui/FullScreen";
+import { FullScreen } from "../ui/FullScreen";
 import { LogoMark } from "../ui/Logo";
+import { Notice } from "../ui/Notice";
 
 export function RoomPage() {
   const { roomId = "" } = useParams();
+  const link = useSearchParams()[0].get("link") ?? undefined; // a share link's code, if opened by one
   const member = useMember();
   if (member === undefined) return <Joining roomId={roomId} />;
   // keyed by account: signing in or out rejoins the room under the new identity
-  return <JoinRoom key={member?.id ?? "guest"} roomId={roomId} member={member} />;
+  return <JoinRoom key={member?.id ?? "guest"} roomId={roomId} member={member} link={link} />;
 }
 
-function JoinRoom({ roomId, member }: { roomId: string; member: Member | null }) {
+function JoinRoom({
+  roomId,
+  member,
+  link,
+}: {
+  roomId: string;
+  member: Member | null;
+  link?: string;
+}) {
   const user = useMemo(() => (member ? memberIdentity(member) : guestIdentity()), [member]);
-  const join = useRoomSession(roomId, user);
+  const join = useRoomSession(roomId, user, link);
 
   if (join.state === "ready") {
-    return <Room roomId={roomId} session={join.session} isMember={member !== null} />;
+    return <Room roomId={roomId} session={join.session} isMember={member !== null} link={link} />;
   }
-  if (join.state === "refused") {
-    return <RefusedRoom missing={join.code === ROOM_NOT_FOUND} isMember={member !== null} />;
-  }
+  if (join.state === "refused") return <RefusedRoom code={join.code} isMember={member !== null} />;
   return <Joining roomId={roomId} />;
 }
 
@@ -51,12 +61,23 @@ function Room({
   roomId,
   session,
   isMember,
+  link,
 }: {
   roomId: string;
   session: RoomSession;
   isMember: boolean;
+  link?: string;
 }) {
   const { status, people, unsyncedEdits } = useRoomState(session);
+  // its title, and whether I'm its owner (who shares it)
+  const info = useQuery({
+    queryKey: ["room", roomId, link],
+    queryFn: () =>
+      api<{ title: string; role: string }>(
+        "GET",
+        `/api/rooms/${roomId}${link ? `?link=${encodeURIComponent(link)}` : ""}`,
+      ),
+  });
   const [file] = session.files();
 
   // edits that haven't synced exist only in this tab, so closing it would lose them
@@ -83,6 +104,8 @@ function Room({
     <div className="flex h-screen flex-col">
       <RoomHeader
         roomId={roomId}
+        title={info.data?.title}
+        canShare={info.data?.role === "owner"}
         status={status}
         people={people}
         unsyncedEdits={unsyncedEdits}
@@ -97,54 +120,33 @@ function Room({
   );
 }
 
-// only members start rooms: a guest is offered to sign in first
-function RefusedRoom({ missing, isMember }: { missing: boolean; isMember: boolean }) {
-  return missing ? (
-    <Notice
-      icon={SearchX}
-      title="This room doesn't exist"
-      body="The link may be mistyped, or the room was never created."
-      isMember={isMember}
-    />
-  ) : (
+function RefusedRoom({ code, isMember }: { code: number; isMember: boolean }) {
+  if (code === ROOM_NOT_FOUND) {
+    return (
+      <Notice
+        icon={SearchX}
+        title="This room doesn't exist"
+        body="The link may be mistyped, or the room was deleted."
+        isMember={isMember}
+      />
+    );
+  }
+  if (code === NO_ACCESS) {
+    return (
+      <Notice
+        icon={Lock}
+        title="You don't have access to this room"
+        body="Ask its owner for a share link. If you joined it before, sign in with that account."
+        isMember={isMember}
+      />
+    );
+  }
+  return (
     <Notice
       icon={Link2Off}
       title="This room link isn't valid"
-      body="Check the link you were sent, or start a fresh room and invite people to it."
+      body="Check the link you were sent, or ask its owner for a new one."
       isMember={isMember}
     />
-  );
-}
-
-// a dead end, with the way back: your rooms, or signing in to start one
-function Notice({
-  icon: Icon,
-  title,
-  body,
-  isMember,
-}: {
-  icon: typeof Trash2;
-  title: string;
-  body: string;
-  isMember: boolean;
-}) {
-  return (
-    <FullScreen>
-      <Card>
-        <div className="text-center">
-          <span className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-red-400/10 text-red-300">
-            <Icon size={20} />
-          </span>
-          <h1 className="mt-5 text-base font-semibold">{title}</h1>
-          <p className="mt-2 text-sm leading-relaxed text-muted">{body}</p>
-          <Link
-            to={isMember ? "/" : "/sign-in"}
-            className="mt-6 inline-flex h-9 items-center rounded-lg bg-accent px-4 text-sm font-semibold text-canvas transition hover:brightness-110"
-          >
-            {isMember ? "Back to your rooms" : "Sign in to start a room"}
-          </Link>
-        </div>
-      </Card>
-    </FullScreen>
   );
 }

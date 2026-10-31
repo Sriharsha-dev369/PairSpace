@@ -83,7 +83,7 @@ export function Editor({ file, awareness }: Props) {
           keymap.of(yUndoManagerKeymap), // before basicSetup so it wins over its own history
           basicSetup,
           javascript(),
-          placeholder("Start typing. Everyone with this room's link sees it live."),
+          placeholder("Start typing. Everyone you share this room with sees it live."),
           refuseTooLarge,
           theme, // before oneDark: earlier extensions take precedence
           oneDark,

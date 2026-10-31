@@ -1,7 +1,7 @@
 // End-to-end spec: real browsers, real web app, real sync server (started by playwright.config.ts).
 
 import { type Browser, type Dialog, expect, type Page, test } from "@playwright/test";
-import { createRoom, memberBrowser } from "./members";
+import { createRoom, memberBrowser, shareLink } from "./members";
 
 // each person gets their own browser context: separate storage, like two different computers.
 // Invited people join as guests (no account)
@@ -12,10 +12,10 @@ async function openRoomAs(browser: Browser, url: string): Promise<Page> {
   return page;
 }
 
-// a room a member created on their dashboard: its link is the invite
+// a room a member created on their dashboard, and its share link: the invite
 async function newRoomUrl(browser: Browser): Promise<string> {
   const owner = await memberBrowser(browser);
-  const url = `/r/${await createRoom(owner)}`;
+  const url = await shareLink(owner, await createRoom(owner));
   await owner.close();
   return url;
 }
@@ -27,20 +27,6 @@ test("an invalid room link says so and leads back to your rooms", async ({ brows
   await expect(page.getByText("This room link isn't valid")).toBeVisible();
   await page.getByRole("link", { name: "Back to your rooms" }).click();
   await expect(page.getByRole("heading", { name: "Your rooms" })).toBeVisible();
-});
-
-test("the share button copies the room link", async ({ browser }) => {
-  const context = await memberBrowser(browser, {
-    permissions: ["clipboard-read", "clipboard-write"],
-  });
-  const page = await context.newPage();
-  await page.goto(`/r/${await createRoom(context)}`);
-  await expect(page.locator(".cm-content")).toBeVisible();
-
-  await page.getByRole("button", { name: "Share" }).click();
-
-  await expect(page.getByRole("button", { name: "Link copied" })).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(page.url());
 });
 
 test("two people in the same room see each other's typing", async ({ browser }) => {

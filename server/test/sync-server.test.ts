@@ -292,6 +292,15 @@ describe("sync server", () => {
       expect(server.roomCount()).toBe(1);
     });
 
+    it("decides who may enter before loading the room", async () => {
+      await server.close();
+      server = await createSyncServer({ port: 0, admit: async () => ({ refused: "no-access" }) });
+      const stranger = await connectRaw("room1");
+
+      expect((await stranger.closed()).code).toBe(4403); // 44xx: clients don't retry
+      expect(server.roomCount()).toBe(0); // nothing loaded for someone who was refused
+    });
+
     it("tells everyone in a deleted room so, and forgets the room", async () => {
       const alice = await connectRaw("room1");
       const bob = await connectRaw("room1");
