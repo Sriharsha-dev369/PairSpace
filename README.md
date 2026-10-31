@@ -17,19 +17,20 @@ delayed networks and concurrent changes.
 
 ## Status
 
-M1 done: open the web app, share the room link, and edit one file together live with names and cursors. Not saved yet (M3), not deployed.
+M1 and M2 done: open the web app, share the room link, and edit one file together live with names and cursors; it survives drops, offline spells and bad networks. M3 in progress: rooms are saved to Postgres and survive a server restart. Not deployed.
 
 ## Run it
 
-Requires Node 24 or newer (`nvm use` reads `.nvmrc`).
+Requires Node 24 or newer (`nvm use` reads `.nvmrc`) and Docker (for Postgres).
 
 npm workspaces: `server/` (WebSocket server) and `web/` (Vite + React app). Run everything from the repo root.
 
 ```
 npm install
+npm run db:up           # Postgres in Docker on localhost:5433 (npm run db:down to stop)
 npm run dev -w server   # server on ws://localhost:8080 (restarts on change)
 npm run dev -w web      # web app on http://localhost:5173
-npm test                # all automated tests (Vitest)
+npm test                # all automated tests (Vitest; server tests need db:up)
 npm run typecheck       # TypeScript check, all packages
 npm run lint            # Biome check; npm run format to fix
 npm run test:e2e        # browser tests (Playwright; first time: npx playwright install chromium)

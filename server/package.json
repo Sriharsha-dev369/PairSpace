@@ -8,18 +8,23 @@
     "typecheck": "tsc --noEmit",
     "build": "tsup src/index.ts --format esm --target node24 --clean",
     "start": "node dist/index.js",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate"
   },
   "type": "module",
   "dependencies": {
+    "drizzle-orm": "^0.45.4",
     "lib0": "^0.2.119",
+    "pg": "^8.23.1",
     "ws": "^8.22.0",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.33"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
     "@types/ws": "^8.18.2",
+    "drizzle-kit": "^0.31.11",
     "tsup": "^9.0.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

@@ -2,7 +2,14 @@
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!**/dist", "!**/coverage", "!test-results", "!playwright-report"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/coverage",
+      "!test-results",
+      "!playwright-report",
+      "!server/drizzle"
+    ]
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "linter": { "enabled": true, "rules": { "preset": "recommended" } },

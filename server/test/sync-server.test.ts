@@ -11,6 +11,7 @@ import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 import { createSyncServer, type SyncServer } from "../src/sync-server";
 import { createFaultyNetwork, type FaultyNetwork } from "./faulty-network";
+import { SETTLE_MS, sleep, waitFor } from "./wait";
 
 // ---------- test helpers ----------
 
@@ -26,17 +27,6 @@ interface YjsClient {
   provider: WebsocketProvider;
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// poll until a condition is true (never sleep and hope)
-async function waitFor(condition: () => boolean, what: string, timeoutMs = 1000) {
-  const start = Date.now();
-  while (!condition()) {
-    if (Date.now() - start > timeoutMs) throw new Error(`timed out waiting for: ${what}`);
-    await sleep(5);
-  }
-}
-
 // deterministic random numbers, so a failing run can be replayed from its printed seed
 function seededRandom(seed: number) {
   let state = seed % 2147483647 || 1;
@@ -45,10 +35,6 @@ function seededRandom(seed: number) {
     return state / 2147483647;
   };
 }
-
-// To prove something did NOT happen we can't wait for it. Instead we wait for something we know
-// will happen, then give the network a short extra moment, then check.
-const SETTLE_MS = 50;
 
 describe("sync server", () => {
   let server: SyncServer;

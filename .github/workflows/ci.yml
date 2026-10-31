@@ -14,6 +14,20 @@ jobs:
   check:
     name: Typecheck, lint, test, build
     runs-on: ubuntu-latest
+    # the same Postgres as docker-compose.yml, on the same port, so the default database URL works
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: pairspace
+          POSTGRES_PASSWORD: pairspace
+          POSTGRES_DB: pairspace
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U pairspace"
+          --health-interval 1s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -29,6 +43,20 @@ jobs:
   e2e:
     name: End-to-end (Playwright)
     runs-on: ubuntu-latest
+    # the same Postgres as docker-compose.yml, on the same port, so the default database URL works
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: pairspace
+          POSTGRES_PASSWORD: pairspace
+          POSTGRES_DB: pairspace
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U pairspace"
+          --health-interval 1s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
