@@ -26,6 +26,7 @@ interface Options {
   port: number; // 0 = let the OS pick a free port (used by tests)
   store?: RoomStore;
   heartbeatMs?: number;
+  saveDelayMs?: number;
   maxMessageBytes?: number;
   log?: (line: string) => void;
 }
@@ -35,6 +36,9 @@ interface Room {
   awareness: awarenessProtocol.Awareness; // live presence (names, cursors), never saved
   conns: Set<WebSocket>;
   presenceOf: Map<WebSocket, Set<number>>; // the awareness client ids each connection owns
+  unsaved: StoredChange[]; // changes waiting for the next write
+  saveTimer?: ReturnType<typeof setTimeout>;
+  saving: Promise<void>; // the latest write: each waits for the one before, so rows stay in order
 }
 
 interface AwarenessChanges {
@@ -54,6 +58,9 @@ const CLOSE_TRY_AGAIN = 1011; // standard "server error": clients retry it
 
 // y-websocket clients drop a connection they hear nothing on for 30s, so beat well inside that
 const HEARTBEAT_MS = 10_000;
+
+// changes wait at most this long to be written; open tabs re-send anything a crash loses meanwhile
+const SAVE_DELAY_MS = 500;
 // an awareness message (type, payload length 1) listing zero people: clients apply it as a no-op
 const KEEPALIVE = new Uint8Array([MESSAGE_AWARENESS, 1, 0]);
 
@@ -62,6 +69,17 @@ const MAX_MESSAGE_BYTES = 2 * 1024 * 1024;
 
 // the room name comes from the URL, which the client controls, so restrict it
 const ROOM_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
+// one row per person per batch: replay still knows who wrote what, without a row per keystroke
+function mergeByAuthor(changes: StoredChange[]): StoredChange[] {
+  const byAuthor = new Map<string | null, Uint8Array[]>();
+  for (const { update, author } of changes) {
+    const theirs = byAuthor.get(author);
+    if (theirs) theirs.push(update);
+    else byAuthor.set(author, [update]);
+  }
+  return [...byAuthor].map(([author, updates]) => ({ author, update: Y.mergeUpdates(updates) }));
+}
 
 function syncMessage(write: (encoder: encoding.Encoder) => void): Uint8Array {
   const encoder = encoding.createEncoder();
@@ -84,6 +102,7 @@ export function createSyncServer({
   port,
   store,
   heartbeatMs = HEARTBEAT_MS,
+  saveDelayMs = SAVE_DELAY_MS,
   maxMessageBytes = MAX_MESSAGE_BYTES,
   log = () => {},
 }: Options): Promise<SyncServer> {
@@ -91,7 +110,6 @@ export function createSyncServer({
   const wss = new WebSocketServer({ port, maxPayload: maxMessageBytes });
   const rooms = new Map<string, Room>();
   const loading = new Map<string, Promise<Room>>(); // rooms being read from the store
-  const writes = new Set<Promise<void>>(); // saves in flight, so close() can wait for them
   const beats = new Map<WebSocket, () => void>(); // what each connection does on every heartbeat
   let nextId = 1;
 
@@ -105,15 +123,30 @@ export function createSyncServer({
     }
   }
 
-  function save(name: string, changes: StoredChange[]) {
+  function queueSave(name: string, room: Room, change: StoredChange) {
     if (!store) return;
-    const write: Promise<void> = store
-      .append(name, changes)
-      .catch((err: Error) =>
-        log(`${new Date().toISOString()} couldn't save "${name}": ${err.message}`),
-      )
-      .finally(() => writes.delete(write));
-    writes.add(write);
+    room.unsaved.push(change);
+    room.saveTimer ??= setTimeout(() => flush(name, room), saveDelayMs);
+  }
+
+  // writes everything waiting, one row per person; a failed write is put back and retried
+  function flush(name: string, room: Room): Promise<void> {
+    clearTimeout(room.saveTimer);
+    room.saveTimer = undefined;
+    room.saving = room.saving.then(async () => {
+      const changes = room.unsaved.splice(0);
+      if (!store || changes.length === 0) return;
+      try {
+        await store.append(name, mergeByAuthor(changes));
+      } catch (err) {
+        log(
+          `${new Date().toISOString()} couldn't save "${name}", retrying: ${(err as Error).message}`,
+        );
+        room.unsaved.unshift(...changes);
+        room.saveTimer ??= setTimeout(() => flush(name, room), saveDelayMs);
+      }
+    });
+    return room.saving;
   }
 
   // who is behind a connection, by the display name in the presence it sent
@@ -142,7 +175,14 @@ export function createSyncServer({
 
     const awareness = new awarenessProtocol.Awareness(doc);
     awareness.setLocalState(null); // the server itself has no presence
-    const room: Room = { doc, awareness, conns: new Set(), presenceOf: new Map() };
+    const room: Room = {
+      doc,
+      awareness,
+      conns: new Set(),
+      presenceOf: new Map(),
+      unsaved: [],
+      saving: Promise.resolve(),
+    };
 
     // forward every change to everyone in the room except the connection it came from, and save it
     doc.on("update", (update: Uint8Array, origin: unknown) => {
@@ -151,7 +191,7 @@ export function createSyncServer({
         syncMessage((e) => syncProtocol.writeUpdate(e, update)),
         origin,
       );
-      save(name, [{ update, author: authorOf(room, origin) }]);
+      queueSave(name, room, { update, author: authorOf(room, origin) });
     });
 
     awareness.on("update", ({ added, updated, removed }: AwarenessChanges, origin: unknown) => {
@@ -301,7 +341,8 @@ export function createSyncServer({
           clearInterval(heartbeat);
           for (const client of wss.clients) client.terminate();
           await new Promise<void>((done) => wss.close(() => done()));
-          await Promise.all([...writes]); // nothing new can arrive now; finish saving what did
+          // nothing new can arrive now: write whatever is still waiting
+          await Promise.all([...rooms].map(([name, room]) => flush(name, room)));
         },
       });
     });

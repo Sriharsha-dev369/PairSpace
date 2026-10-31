@@ -8,7 +8,7 @@ import * as Y from "yjs";
 import { openRoomStore } from "../src/room-store";
 import { createSyncServer, type RoomStore, type SyncServer } from "../src/sync-server";
 import { TEST_DATABASE_URL } from "./database";
-import { waitFor } from "./wait";
+import { SETTLE_MS, sleep, waitFor } from "./wait";
 
 const store = openRoomStore(TEST_DATABASE_URL);
 afterAll(() => store.close());
@@ -21,14 +21,23 @@ interface Person {
 const text = (person: Person) => person.doc.getText("probe").toString();
 const fileIds = (person: Person) => [...person.doc.getMap("files").keys()];
 
+// type one character at a time, each its own change, as a person typing does
+function type(person: Person, chars: string) {
+  const probe = person.doc.getText("probe");
+  for (const char of chars) probe.insert(probe.length, char);
+}
+
 describe("persistence", () => {
   let server: SyncServer;
   let people: Person[];
   let room: string;
 
   // port: reuse the old server's, so people still connected find the new one
-  async function startServer(options: { port?: number; store?: RoomStore } = {}) {
-    server = await createSyncServer({ port: 0, store, ...options });
+  // saveDelayMs: how long changes may wait to be written (50ms here, to keep tests fast)
+  async function startServer(
+    options: { port?: number; store?: RoomStore; saveDelayMs?: number } = {},
+  ) {
+    server = await createSyncServer({ port: 0, store, saveDelayMs: 50, ...options });
   }
 
   async function restartServer() {
@@ -124,5 +133,73 @@ describe("persistence", () => {
 
     expect(code).toBe(1011); // "server error": y-websocket clients retry it
     await join("Alice"); // the retry loads the room
+  });
+
+  // ---------- batched writes ----------
+
+  const authors = async () => (await store.history(room)).map((change) => change.author);
+
+  it("saves a burst of typing as one change per person", async () => {
+    await server.close();
+    await startServer({ saveDelayMs: 300 });
+    const alice = await join("Alice");
+
+    // at a person's pace, so each key arrives on its own rather than in one network read
+    for (const char of "hello") {
+      type(alice, char);
+      await sleep(20);
+    }
+
+    await waitFor(async () => (await authors()).includes("Alice"), "alice's typing to be saved");
+    await sleep(300 + SETTLE_MS); // one more save delay: room for any extra row to appear
+    expect(await authors()).toEqual([null, "Alice"]); // null: the first file
+  });
+
+  it("keeps each person's changes in their own row", async () => {
+    const alice = await join("Alice");
+    const bob = await join("Bob");
+
+    type(alice, "abc");
+    type(bob, "xyz");
+
+    await waitFor(async () => (await authors()).length >= 3, "both people's typing to be saved");
+    await sleep(100 + SETTLE_MS);
+    expect((await authors()).sort()).toEqual(["Alice", "Bob", null]);
+  });
+
+  it("saves changes still waiting when the server shuts down", async () => {
+    await server.close();
+    await startServer({ saveDelayMs: 60_000 }); // nothing would be written for a minute
+    const alice = await join("Alice");
+    const bob = await join("Bob"); // a witness: if bob has it, so does the server
+    type(alice, "not yet written");
+    await waitFor(() => text(bob) === "not yet written", "the server to receive it");
+    leave(alice);
+    leave(bob);
+
+    await restartServer();
+
+    const carol = await join("Carol");
+    expect(text(carol)).toBe("not yet written");
+  });
+
+  it("keeps changes it couldn't save, and saves them on the next try", async () => {
+    let failWrites = 0;
+    const flaky: RoomStore = {
+      load: (name) => store.load(name),
+      append: (name, changes) =>
+        failWrites-- > 0 ? Promise.reject(new Error("database down")) : store.append(name, changes),
+    };
+    await server.close();
+    await startServer({ store: flaky });
+    const alice = await join("Alice"); // the room and its first file are saved
+    failWrites = 1;
+
+    type(alice, "saved on the retry");
+
+    await waitFor(async () => (await authors()).includes("Alice"), "the retry to save it");
+    const saved = new Y.Doc();
+    Y.applyUpdate(saved, (await store.load(room)) ?? new Uint8Array());
+    expect(saved.getText("probe").toString()).toBe("saved on the retry");
   });
 });
