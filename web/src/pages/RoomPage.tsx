@@ -1,4 +1,4 @@
-import { Link2Off, Loader2, SearchX } from "lucide-react";
+import { Link2Off, Loader2, SearchX, Trash2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { Link, useParams } from "react-router";
 import { type Member, useMember } from "../auth/useMember";
@@ -62,11 +62,22 @@ function Room({
   // edits that haven't synced exist only in this tab, so closing it would lose them
   useEffect(() => {
     const askFirst = (event: BeforeUnloadEvent) => {
-      if (session.unsyncedEdits()) event.preventDefault();
+      if (session.unsyncedEdits() && session.status() !== "deleted") event.preventDefault();
     };
     window.addEventListener("beforeunload", askFirst);
     return () => window.removeEventListener("beforeunload", askFirst);
   }, [session]);
+
+  if (status === "deleted") {
+    return (
+      <Notice
+        icon={Trash2}
+        title="This room was deleted"
+        body="Its owner deleted it, with its whole history."
+        isMember={isMember}
+      />
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col">
@@ -88,7 +99,35 @@ function Room({
 
 // only members start rooms: a guest is offered to sign in first
 function RefusedRoom({ missing, isMember }: { missing: boolean; isMember: boolean }) {
-  const Icon = missing ? SearchX : Link2Off;
+  return missing ? (
+    <Notice
+      icon={SearchX}
+      title="This room doesn't exist"
+      body="The link may be mistyped, or the room was never created."
+      isMember={isMember}
+    />
+  ) : (
+    <Notice
+      icon={Link2Off}
+      title="This room link isn't valid"
+      body="Check the link you were sent, or start a fresh room and invite people to it."
+      isMember={isMember}
+    />
+  );
+}
+
+// a dead end, with the way back: your rooms, or signing in to start one
+function Notice({
+  icon: Icon,
+  title,
+  body,
+  isMember,
+}: {
+  icon: typeof Trash2;
+  title: string;
+  body: string;
+  isMember: boolean;
+}) {
   return (
     <FullScreen>
       <Card>
@@ -96,19 +135,13 @@ function RefusedRoom({ missing, isMember }: { missing: boolean; isMember: boolea
           <span className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-red-400/10 text-red-300">
             <Icon size={20} />
           </span>
-          <h1 className="mt-5 text-base font-semibold">
-            {missing ? "This room doesn't exist" : "This room link isn't valid"}
-          </h1>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
-            {missing
-              ? "The link may be mistyped, or the room was never created."
-              : "Check the link you were sent, or start a fresh room and invite people to it."}
-          </p>
+          <h1 className="mt-5 text-base font-semibold">{title}</h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted">{body}</p>
           <Link
             to={isMember ? "/" : "/sign-in"}
             className="mt-6 inline-flex h-9 items-center rounded-lg bg-accent px-4 text-sm font-semibold text-canvas transition hover:brightness-110"
           >
-            {isMember ? "Start a new room" : "Sign in to start a room"}
+            {isMember ? "Back to your rooms" : "Sign in to start a room"}
           </Link>
         </div>
       </Card>

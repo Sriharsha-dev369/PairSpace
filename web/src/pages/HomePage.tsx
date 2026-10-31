@@ -1,10 +1,10 @@
 import { Loader2 } from "lucide-react";
 import { Navigate } from "react-router";
 import { useMember } from "../auth/useMember";
-import { newRoomId } from "../room/room-id";
+import { Dashboard } from "../dashboard/Dashboard";
 import { FullScreen } from "../ui/FullScreen";
 
-// members start a fresh room; everyone else signs in first (the landing page arrives in M10)
+// members see their rooms; everyone else signs in first (the landing page arrives in M10)
 export function HomePage() {
   const member = useMember();
   if (member === undefined) {
@@ -14,5 +14,5 @@ export function HomePage() {
       </FullScreen>
     );
   }
-  return <Navigate to={member ? `/r/${newRoomId()}` : "/sign-in"} replace />;
+  return member ? <Dashboard member={member} /> : <Navigate to="/sign-in" replace />;
 }

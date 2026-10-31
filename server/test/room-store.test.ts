@@ -3,13 +3,30 @@
 
 import { afterAll, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { connect } from "../src/db";
 import { openRoomStore } from "../src/room-store";
+import { users } from "../src/schema";
 import { TEST_DATABASE_URL } from "./database";
 
 const store = openRoomStore(TEST_DATABASE_URL);
-afterAll(() => store.close());
+const { db, pool } = connect(TEST_DATABASE_URL); // to add accounts, which the store doesn't do
+afterAll(async () => {
+  await store.close();
+  await pool.end();
+});
 
-const newRoom = () => `room-${crypto.randomUUID()}`;
+// a fresh room, created as the dashboard would (no first file unless given)
+async function newRoom(ownerId: string | null = null, state?: Uint8Array) {
+  const id = `room-${crypto.randomUUID()}`;
+  await store.createRoom(id, { ownerId, title: "Test room", state });
+  return id;
+}
+
+async function newAccount() {
+  const id = crypto.randomUUID();
+  await db.insert(users).values({ id, name: "Someone", email: `${id}@example.com` });
+  return id;
+}
 
 // the Yjs changes made by typing each string in turn into one document
 function changesTyping(...parts: string[]): Uint8Array[] {
@@ -50,11 +67,11 @@ function savedTyping(room: string) {
 
 describe("room store", () => {
   it("has nothing for a room that was never saved", async () => {
-    expect(await store.load(newRoom())).toBeNull();
+    expect(await store.load(`room-${crypto.randomUUID()}`)).toBeNull();
   });
 
   it("loads back the changes saved for a room", async () => {
-    const room = newRoom();
+    const room = await newRoom();
     for (const update of changesTyping("hello", " world")) {
       await store.append(room, [{ update, author: "Alice", authorId: null }]);
     }
@@ -63,7 +80,7 @@ describe("room store", () => {
   });
 
   it("keeps every change with its author and time, oldest first", async () => {
-    const room = newRoom();
+    const room = await newRoom();
     const [a, b, c] = changesTyping("a", "b", "c");
     await store.append(room, [{ update: a, author: "Alice", authorId: null }]);
     await store.append(room, [
@@ -79,7 +96,7 @@ describe("room store", () => {
   });
 
   it("keeps rooms apart", async () => {
-    const [first, second] = [newRoom(), newRoom()];
+    const [first, second] = [await newRoom(), await newRoom()];
     const [a] = changesTyping("only in the first");
     const [b] = changesTyping("only in the second");
     await store.append(first, [{ update: a, author: null, authorId: null }]);
@@ -90,7 +107,7 @@ describe("room store", () => {
   });
 
   it("loads from the latest snapshot plus only the changes after it", async () => {
-    const room = newRoom();
+    const room = await newRoom();
     const typing = savedTyping(room);
     await typing.type("a");
     const upTo = await typing.type("b");
@@ -104,7 +121,7 @@ describe("room store", () => {
   });
 
   it("keeps the full history when a snapshot is taken", async () => {
-    const room = newRoom();
+    const room = await newRoom();
     const typing = savedTyping(room);
     await typing.type("a");
     const upTo = await typing.type("b");
@@ -112,5 +129,66 @@ describe("room store", () => {
     await store.snapshot(room, Y.encodeStateAsUpdate(typing.doc), upTo);
 
     expect(await store.history(room)).toHaveLength(2);
+  });
+});
+
+describe("rooms and their owners", () => {
+  it("creates a room with its owner, title and first file", async () => {
+    const owner = await newAccount();
+    const [firstFile] = changesTyping("the first file");
+    const id = `room-${crypto.randomUUID()}`;
+
+    await store.createRoom(id, { ownerId: owner, title: "Plans", state: firstFile });
+
+    expect(await loadText(id)).toBe("the first file");
+    expect(await store.listRooms(owner)).toEqual([expect.objectContaining({ id, title: "Plans" })]);
+  });
+
+  it("lists an owner's rooms, most recently edited first", async () => {
+    const [owner, someoneElse] = [await newAccount(), await newAccount()];
+    const older = await newRoom(owner);
+    const newer = await newRoom(owner);
+    await newRoom(someoneElse);
+    const ids = async () => (await store.listRooms(owner)).map((room) => room.id);
+    expect(await ids()).toEqual([newer, older]);
+
+    const [edit] = changesTyping("an edit");
+    await store.append(older, [{ update: edit, author: null, authorId: null }]);
+
+    expect(await ids()).toEqual([older, newer]);
+  });
+
+  it("renames a room only for its owner", async () => {
+    const [owner, someoneElse] = [await newAccount(), await newAccount()];
+    const id = await newRoom(owner);
+
+    expect(await store.renameRoom(id, someoneElse, "Hijacked")).toBe(false);
+    expect(await store.renameRoom(id, owner, "Renamed")).toBe(true);
+    expect((await store.listRooms(owner))[0].title).toBe("Renamed");
+  });
+
+  it("deletes a room and its whole history, only for its owner", async () => {
+    const [owner, someoneElse] = [await newAccount(), await newAccount()];
+    const [firstFile] = changesTyping("some work");
+    const id = await newRoom(owner, firstFile);
+
+    expect(await store.deleteRoom(id, someoneElse)).toBe(false);
+    expect(await loadText(id)).toBe("some work");
+    expect(await store.deleteRoom(id, owner)).toBe(true);
+    expect(await store.load(id)).toBeNull();
+    expect(await store.history(id)).toEqual([]);
+  });
+
+  // a write still in flight when the owner deletes the room must not recreate it
+  it("never brings back a deleted room", async () => {
+    const owner = await newAccount();
+    const id = await newRoom(owner);
+    await store.deleteRoom(id, owner);
+    const [late] = changesTyping("arrived after the delete");
+
+    await expect(
+      store.append(id, [{ update: late, author: null, authorId: null }]),
+    ).rejects.toThrow();
+    expect(await store.load(id)).toBeNull();
   });
 });

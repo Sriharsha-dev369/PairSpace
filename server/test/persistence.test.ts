@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished }
 import { WebSocket } from "ws";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
+import { newRoomDocument } from "../src/room-document";
 import { openRoomStore } from "../src/room-store";
 import { createSyncServer, type RoomStore, type SyncServer } from "../src/sync-server";
 import { TEST_DATABASE_URL } from "./database";
@@ -47,6 +48,8 @@ describe("persistence", () => {
   beforeEach(async () => {
     people = [];
     room = `room-${crypto.randomUUID()}`;
+    // created as the dashboard does: rooms exist before anyone opens them
+    await store.createRoom(room, { ownerId: null, title: "Test room", state: newRoomDocument() });
     await startServer();
   });
 

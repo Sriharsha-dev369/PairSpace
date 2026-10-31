@@ -6,6 +6,7 @@ import { WebSocket } from "ws";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 import { type App, startApp } from "../src/app";
+import { newRoomDocument } from "../src/room-document";
 import { openRoomStore } from "../src/room-store";
 import { TEST_DATABASE_URL } from "./database";
 import { waitFor } from "./wait";
@@ -74,6 +75,15 @@ async function join(displayName: string, member?: Member) {
   return { doc, probe: doc.getText("probe") };
 }
 
+// the test's room, created as the dashboard does (owned by `owner`, if given)
+function createRoom(owner?: Member) {
+  return store.createRoom(room, {
+    ownerId: owner?.id ?? null,
+    title: "Test room",
+    state: newRoomDocument(),
+  });
+}
+
 // how the server closes a plain connection to the room (with a member's cookie, if given)
 function closeCode(member?: Member): Promise<number> {
   const socket = new WebSocket(`ws://localhost:${app.port}/${room}`, {
@@ -99,12 +109,11 @@ async function savedChange(
 }
 
 describe("who connects", () => {
-  it("lets a member create a room", async () => {
+  it("never creates a room when someone opens a new address, even a member", async () => {
     const alice = await signUp("Alice");
 
-    await join("Alice", alice);
-
-    expect(await store.load(room)).not.toBeNull();
+    expect(await closeCode(alice)).toBe(4404); // rooms are created from the dashboard
+    expect(await store.load(room)).toBeNull();
   });
 
   it("turns away a guest who opens a room that doesn't exist, and creates nothing", async () => {
@@ -113,7 +122,9 @@ describe("who connects", () => {
   });
 
   it("lets a guest join a room that exists", async () => {
-    const alice = await join("Alice", await signUp("Alice"));
+    const member = await signUp("Alice");
+    await createRoom(member);
+    const alice = await join("Alice", member);
     alice.probe.insert(0, "made by a member");
 
     const guest = await join("Gus");
@@ -123,6 +134,7 @@ describe("who connects", () => {
 
   it("saves a member's changes under their account, whatever name their browser shows", async () => {
     const alice = await signUp("Alice Account");
+    await createRoom(alice);
     const browser = await join("Not Alice", alice);
 
     browser.probe.insert(0, "by alice");
@@ -134,7 +146,7 @@ describe("who connects", () => {
   });
 
   it("saves a guest's changes under the name they show", async () => {
-    await join("Alice", await signUp("Alice"));
+    await createRoom();
     const guest = await join("Guest Gus");
 
     guest.probe.insert(0, "by a guest");
@@ -144,7 +156,7 @@ describe("who connects", () => {
   });
 
   it("keeps at most 64 characters of a guest's name", async () => {
-    await join("Alice", await signUp("Alice"));
+    await createRoom();
     const guest = await join("x".repeat(100));
 
     guest.probe.insert(0, "by a long name");
@@ -154,18 +166,25 @@ describe("who connects", () => {
   });
 
   it("treats a signed-out session as a guest", async () => {
-    const alice = await signUp("Alice");
+    const alice = await signUp("Alice Account");
+    await createRoom(alice);
     await fetch(`http://localhost:${app.port}/api/auth/sign-out`, {
       method: "POST",
       headers: { origin: WEB_ORIGIN, "content-type": "application/json", cookie: alice.cookie },
       body: "{}",
     });
+    const browser = await join("Alice Shown", alice); // the old cookie no longer works
 
-    expect(await closeCode(alice)).toBe(4404);
+    browser.probe.insert(0, "after signing out");
+
+    const change = await savedChange((c) => c.author === "Alice Shown");
+    expect(change?.authorId).toBeNull();
   });
 
-  it("puts two members who open a new room at the same moment in the same room", async () => {
+  // two loads of one room at once would make two copies of it, splitting the people in it
+  it("puts two members who open a room at the same moment in the same room", async () => {
     const [alice, bob] = await Promise.all([signUp("Alice"), signUp("Bob")]);
+    await createRoom(alice);
 
     const [hers, his] = await Promise.all([join("Alice", alice), join("Bob", bob)]);
 

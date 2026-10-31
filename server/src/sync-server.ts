@@ -5,10 +5,13 @@ import { WebSocket, WebSocketServer } from "ws";
 import * as awarenessProtocol from "y-protocols/awareness";
 import * as syncProtocol from "y-protocols/sync";
 import * as Y from "yjs";
+import { newRoomDocument } from "./room-document";
 
 export interface SyncServer {
   port: number;
   roomCount(): number;
+  // the room was deleted: everyone in it is told (4410) and it's forgotten, unsaved changes too
+  dropRoom(name: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -63,6 +66,7 @@ interface Room {
   saving: Promise<void>; // the latest write: each waits for the one before, so rows stay in order
   sinceSnapshot: number; // changes written since the last snapshot
   unloadTimer?: ReturnType<typeof setTimeout>;
+  dropped: boolean; // deleted: nothing more is saved, and nobody else is let in
 }
 
 interface AwarenessChanges {
@@ -79,7 +83,8 @@ const MESSAGE_AWARENESS = 1;
 const CLOSE_INVALID_ROOM = 4400;
 const CLOSE_MALFORMED = 1007; // standard WebSocket code for "invalid payload data"
 const CLOSE_TRY_AGAIN = 1011; // standard "server error": clients retry it
-const CLOSE_NO_ROOM = 4404; // a guest opened a room that doesn't exist (only members create rooms)
+const CLOSE_NO_ROOM = 4404; // no such room (rooms are created from the dashboard, not by opening one)
+const CLOSE_DELETED = 4410; // the owner deleted the room while you were in it
 
 // y-websocket clients drop a connection they hear nothing on for 30s, so beat well inside that
 const HEARTBEAT_MS = 10_000;
@@ -169,7 +174,7 @@ export function createSyncServer({
   }
 
   function queueSave(name: string, room: Room, change: StoredChange) {
-    if (!store) return;
+    if (!store || room.dropped) return;
     room.unsaved.push(change);
     room.saveTimer ??= setTimeout(() => flush(name, room), saveDelayMs);
   }
@@ -187,6 +192,7 @@ export function createSyncServer({
         upTo = await store.append(name, rows);
       } catch (err) {
         note(`couldn't save "${name}", retrying: ${(err as Error).message}`);
+        if (room.dropped) return; // deleted meanwhile: there's nothing to retry into
         room.unsaved.unshift(...changes);
         room.saveTimer ??= setTimeout(() => flush(name, room), saveDelayMs);
         return;
@@ -229,29 +235,18 @@ export function createSyncServer({
     return { author: null, authorId: null };
   }
 
-  // loads a room from the store; a room never saved is created only if `mayCreate`, else null
-  async function openRoom(name: string, mayCreate: boolean): Promise<Room | null> {
+  // with a store, a room exists only if the store has it (rooms are created from the dashboard);
+  // without one (tests), any valid name is a room, made on first use
+  async function openRoom(name: string): Promise<Room | null> {
     const doc = new Y.Doc();
-    const saved = store ? await store.load(name) : null;
     let sinceSnapshot = 0;
-    if (saved) {
+    if (store) {
+      const saved = await store.load(name);
+      if (!saved) return null;
       Y.applyUpdate(doc, saved.state);
       sinceSnapshot = saved.replayed;
-    } else if (!mayCreate) {
-      return null;
     } else {
-      // the server creates the first file: if clients did, two joining at once would race
-      const file = new Y.Map<unknown>();
-      file.set("name", "main.js");
-      file.set("content", new Y.Text());
-      doc.getMap("files").set(crypto.randomUUID(), file);
-      // saved before anyone is let in, so a restart can never give the room a second file
-      if (store) {
-        await store.append(name, [
-          { update: Y.encodeStateAsUpdate(doc), author: null, authorId: null },
-        ]);
-        sinceSnapshot = 1;
-      }
+      Y.applyUpdate(doc, newRoomDocument());
     }
 
     const awareness = new awarenessProtocol.Awareness(doc);
@@ -265,6 +260,7 @@ export function createSyncServer({
       unsaved: [],
       saving: Promise.resolve(),
       sinceSnapshot,
+      dropped: false,
     };
 
     // forward every change to everyone in the room except the connection it came from, and save it
@@ -288,18 +284,18 @@ export function createSyncServer({
     });
 
     rooms.set(name, room);
-    note(`room "${name}" ${saved ? "loaded" : "created"} (${rooms.size} rooms)`);
+    note(`room "${name}" ${store ? "loaded" : "created"} (${rooms.size} rooms)`);
     return room;
   }
 
-  // the room in memory, else from the store, else created if `mayCreate`. Attempts on one room
+  // the room in memory, else from the store. Attempts on one room
   // run one after another, so a guest and a member arriving at once can't race each other
-  function getRoom(name: string, mayCreate: boolean): Promise<Room | null> {
+  function getRoom(name: string): Promise<Room | null> {
     const inMemory = rooms.get(name);
     if (inMemory) return Promise.resolve(inMemory);
     const attempt = (opening.get(name) ?? Promise.resolve())
       .catch(() => {}) // a failed earlier attempt doesn't stop this one
-      .then(() => rooms.get(name) ?? openRoom(name, mayCreate));
+      .then(() => rooms.get(name) ?? openRoom(name));
     opening.set(name, attempt);
     const forget = () => {
       if (opening.get(name) === attempt) opening.delete(name);
@@ -421,11 +417,10 @@ export function createSyncServer({
     void (async () => {
       try {
         const member = identify ? await identify(req) : null;
-        // without accounts (no identify), everyone may create rooms
-        const room = await getRoom(name, !identify || member !== null);
+        const room = await getRoom(name);
         if (socket.readyState !== WebSocket.OPEN) return; // left while the room was opening
-        if (!room) {
-          say(`refused: "${name}" doesn't exist, and only members create rooms`);
+        if (!room || room.dropped) {
+          say(`refused: "${name}" doesn't exist`);
           socket.close(CLOSE_NO_ROOM, "room not found");
           return;
         }
@@ -444,6 +439,19 @@ export function createSyncServer({
       resolve({
         port: address !== null && typeof address === "object" ? address.port : (port ?? 0),
         roomCount: () => rooms.size,
+        dropRoom: async (name) => {
+          await opening.get(name)?.catch(() => {}); // a load in progress puts the room in memory
+          const room = rooms.get(name);
+          if (!room) return;
+          room.dropped = true;
+          rooms.delete(name);
+          clearTimeout(room.saveTimer);
+          clearTimeout(room.unloadTimer);
+          room.unsaved = [];
+          for (const conn of room.conns) conn.close(CLOSE_DELETED, "room deleted");
+          await room.saving; // a write already in flight finishes before the caller goes on
+          note(`room "${name}" deleted (${rooms.size} rooms)`);
+        },
         close: async () => {
           clearInterval(heartbeat);
           for (const room of rooms.values()) clearTimeout(room.unloadTimer);

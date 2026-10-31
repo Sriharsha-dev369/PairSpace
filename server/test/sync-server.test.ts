@@ -292,6 +292,17 @@ describe("sync server", () => {
       expect(server.roomCount()).toBe(1);
     });
 
+    it("tells everyone in a deleted room so, and forgets the room", async () => {
+      const alice = await connectRaw("room1");
+      const bob = await connectRaw("room1");
+
+      await server.dropRoom("room1");
+
+      expect((await alice.closed()).code).toBe(4410); // 44xx: clients don't retry
+      expect((await bob.closed()).code).toBe(4410);
+      expect(server.roomCount()).toBe(0);
+    });
+
     it("handles many clients joining and leaving", async () => {
       const crowd = await Promise.all(Array.from({ length: 30 }, () => connectRaw("busy")));
       expect(server.roomCount()).toBe(1);

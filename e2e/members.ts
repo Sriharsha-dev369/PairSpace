@@ -21,3 +21,14 @@ export async function memberBrowser(browser: Browser, options = {}, name?: strin
   await signUp(context, name);
   return context;
 }
+
+// a room created on the member's dashboard (the only way rooms are made), by its API
+export async function createRoom(context: BrowserContext, title?: string): Promise<string> {
+  const origin = test.info().project.use.baseURL ?? "";
+  const response = await context.request.post("/api/rooms", {
+    headers: { origin },
+    data: title === undefined ? {} : { title },
+  });
+  expect(response.status(), await response.text()).toBe(201);
+  return (await response.json()).id;
+}

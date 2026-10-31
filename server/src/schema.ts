@@ -9,7 +9,11 @@ const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
 
 export const rooms = pgTable("rooms", {
   id: text("id").primaryKey(), // the room name from its link
+  // who created it; deleting the account deletes their rooms. Null for rooms from before owners
+  ownerId: text("owner_id").references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull().default("Untitled room"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastEditedAt: timestamp("last_edited_at", { withTimezone: true }).notNull().defaultNow(),
   // the whole document at one point, so loading needs only the changes after it
   snapshot: bytea("snapshot"),
   snapshotUpTo: bigint("snapshot_up_to", { mode: "number" }), // id of the last change it includes

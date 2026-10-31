@@ -1,4 +1,4 @@
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { connect, DATABASE_URL } from "./db";
 import { rooms, roomUpdates } from "./schema";
@@ -8,7 +8,22 @@ export interface HistoryEntry extends StoredChange {
   at: Date;
 }
 
+export interface RoomSummary {
+  id: string;
+  title: string;
+  createdAt: Date;
+  lastEditedAt: Date;
+}
+
 export interface PostgresRoomStore extends RoomStore {
+  // `state`: the room's first content, saved as its first change
+  createRoom(
+    id: string,
+    room: { ownerId: string | null; title: string; state?: Uint8Array },
+  ): Promise<void>;
+  listRooms(ownerId: string): Promise<RoomSummary[]>; // most recently edited first
+  renameRoom(id: string, ownerId: string, title: string): Promise<boolean>; // false: not theirs
+  deleteRoom(id: string, ownerId: string): Promise<boolean>; // with its history; false: not theirs
   history(room: string): Promise<HistoryEntry[]>; // every change, oldest first (replay, M8)
   close(): Promise<void>;
 }
@@ -34,9 +49,11 @@ export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
       return { state: Y.mergeUpdates(parts), replayed: later.length };
     },
 
+    // never creates the room: a write still in flight when a room is deleted must fail, not
+    // bring the room back
     async append(room, changes) {
       return db.transaction(async (tx) => {
-        await tx.insert(rooms).values({ id: room }).onConflictDoNothing();
+        await tx.update(rooms).set({ lastEditedAt: sql`now()` }).where(eq(rooms.id, room));
         const written = await tx
           .insert(roomUpdates)
           .values(
@@ -54,6 +71,48 @@ export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
 
     async snapshot(room, state, upTo) {
       await db.update(rooms).set({ snapshot: state, snapshotUpTo: upTo }).where(eq(rooms.id, room));
+    },
+
+    async createRoom(id, { ownerId, title, state }) {
+      await db.transaction(async (tx) => {
+        await tx.insert(rooms).values({ id, ownerId, title });
+        if (state) {
+          await tx
+            .insert(roomUpdates)
+            .values({ roomId: id, data: state, author: null, authorId: null });
+        }
+      });
+    },
+
+    async listRooms(ownerId) {
+      return db
+        .select({
+          id: rooms.id,
+          title: rooms.title,
+          createdAt: rooms.createdAt,
+          lastEditedAt: rooms.lastEditedAt,
+        })
+        .from(rooms)
+        .where(eq(rooms.ownerId, ownerId))
+        .orderBy(desc(rooms.lastEditedAt), desc(rooms.createdAt));
+    },
+
+    async renameRoom(id, ownerId, title) {
+      const renamed = await db
+        .update(rooms)
+        .set({ title })
+        .where(and(eq(rooms.id, id), eq(rooms.ownerId, ownerId)))
+        .returning({ id: rooms.id });
+      return renamed.length > 0;
+    },
+
+    async deleteRoom(id, ownerId) {
+      // its changes go with it (room_updates.room_id cascades)
+      const deleted = await db
+        .delete(rooms)
+        .where(and(eq(rooms.id, id), eq(rooms.ownerId, ownerId)))
+        .returning({ id: rooms.id });
+      return deleted.length > 0;
     },
 
     async history(room) {

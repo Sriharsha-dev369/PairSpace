@@ -61,8 +61,13 @@ describe("room session", () => {
     await expect(join("not.a.valid.room").synced).rejects.toMatchObject({ code: 4400 });
 
     await server.close();
-    // with accounts on, a guest can't open a room that doesn't exist yet
-    server = await createSyncServer({ port: 0, identify: async () => null });
+    // a server whose store has no rooms: opening an address never creates one
+    const noRooms = {
+      load: async () => null,
+      append: async () => 0,
+      snapshot: async () => {},
+    };
+    server = await createSyncServer({ port: 0, store: noRooms });
     await expect(join("never-created").synced).rejects.toMatchObject({ code: 4404 });
   });
 
@@ -143,6 +148,19 @@ describe("room session", () => {
       () => theirs.files()[0].content.toString() === "online offline",
       "bob to get the offline edit",
     );
+  });
+
+  it("says so when the room is deleted while you're in it, and stops reconnecting", async () => {
+    const session = join();
+    await session.synced;
+    const seen: string[] = [];
+    session.subscribe(() => seen.push(session.status()));
+
+    await server.dropRoom("room1");
+
+    await waitFor(() => seen.at(-1) === "deleted", "the UI to be told the room was deleted");
+    await sleep(600); // longer than the provider's first reconnect delay (200ms)
+    expect(logCount("joined")).toBe(1);
   });
 
   it("stops reconnecting and says so when a change is too large to sync", async () => {

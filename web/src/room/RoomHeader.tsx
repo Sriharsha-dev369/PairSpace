@@ -1,6 +1,6 @@
-import { LogIn, LogOut } from "lucide-react";
-import { Link, useLocation, useNavigate } from "react-router";
-import { authClient } from "../auth/client";
+import { LogIn } from "lucide-react";
+import { Link, useLocation } from "react-router";
+import { SignOutButton } from "../auth/SignOutButton";
 import { Logo } from "../ui/Logo";
 import { ShareButton } from "./ShareButton";
 import type { ConnectionStatus, Person } from "./session";
@@ -11,6 +11,7 @@ const STATUS: Record<ConnectionStatus, { label: string; dot: string }> = {
   reconnecting: { label: "Reconnecting…", dot: "bg-amber-400 animate-pulse" },
   offline: { label: "Offline", dot: "bg-red-400" },
   "too-large": { label: "Change too large to sync", dot: "bg-red-400" },
+  deleted: { label: "Room deleted", dot: "bg-red-400" },
 };
 
 interface Props {
@@ -64,7 +65,6 @@ const ACCOUNT_BUTTON =
 
 // members sign out here; guests sign in and come straight back to this room
 function AccountButton({ isMember }: { isMember: boolean }) {
-  const navigate = useNavigate();
   const { pathname } = useLocation();
   if (!isMember) {
     return (
@@ -74,16 +74,7 @@ function AccountButton({ isMember }: { isMember: boolean }) {
       </Link>
     );
   }
-  async function signOut() {
-    await authClient.signOut();
-    navigate("/sign-in", { replace: true });
-  }
-  return (
-    <button type="button" onClick={signOut} className={ACCOUNT_BUTTON}>
-      <LogOut size={14} />
-      Sign out
-    </button>
-  );
+  return <SignOutButton className={ACCOUNT_BUTTON} />;
 }
 
 export function RoomHeader({ roomId, status, people, unsyncedEdits, isMember }: Props) {

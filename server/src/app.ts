@@ -6,7 +6,8 @@ import { Hono } from "hono";
 import { createAuth, type GitHubApp } from "./auth";
 import { DATABASE_URL } from "./db";
 import { openRoomStore } from "./room-store";
-import { createSyncServer } from "./sync-server";
+import { roomsApi } from "./rooms-api";
+import { createSyncServer, type SyncServer } from "./sync-server";
 
 // where the web app runs in development (Vite); deployments set WEB_ORIGIN
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://localhost:5173";
@@ -35,16 +36,21 @@ export async function startApp({
   const { auth, close: closeAuth } = createAuth({ databaseUrl, webOrigin, github });
   const store = openRoomStore(databaseUrl);
 
+  let sync: SyncServer | undefined; // attached once the HTTP server is listening
   const api = new Hono();
   api.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
   // which sign-in buttons the page should show
   api.get("/api/sign-in-methods", (c) => c.json({ github: github !== undefined }));
+  api.route(
+    "/api/rooms",
+    roomsApi({ auth, store, webOrigin, dropRoom: async (id) => sync?.dropRoom(id) }),
+  );
 
   const http = await new Promise<Server>((resolve) => {
     const server = serve({ fetch: api.fetch, port }, () => resolve(server as Server));
   });
   // WebSocket upgrade requests arrive on the same server, carrying the session cookie
-  const sync = await createSyncServer({
+  sync = await createSyncServer({
     server: http,
     store,
     log,

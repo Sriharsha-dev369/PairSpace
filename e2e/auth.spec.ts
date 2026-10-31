@@ -1,9 +1,11 @@
 // End-to-end spec for accounts: signing up, in and out, and what guests and members can do.
 
 import { expect, test } from "@playwright/test";
-import { memberBrowser, newEmail, PASSWORD } from "./members";
+import { createRoom, memberBrowser, newEmail, PASSWORD } from "./members";
 
-test("signing up takes you into a new room under your account name", async ({ page }) => {
+test("signing up takes you to your rooms, and you're in them under your account name", async ({
+  page,
+}) => {
   await page.goto("/sign-up");
 
   await page.getByLabel("Name").fill("Ada Lovelace");
@@ -11,6 +13,8 @@ test("signing up takes you into a new room under your account name", async ({ pa
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
 
+  await expect(page.getByRole("heading", { name: "Your rooms" })).toBeVisible();
+  await page.getByRole("button", { name: "New room" }).first().click();
   await expect(page).toHaveURL(/\/r\/[a-z0-9]{10}$/);
   await expect(page.getByTestId("my-name")).toHaveText("Ada Lovelace");
 });
@@ -44,7 +48,7 @@ test("signing in with a wrong password says so", async ({ browser }) => {
 test("signing out takes you back to sign in", async ({ browser }) => {
   const page = await (await memberBrowser(browser)).newPage();
   await page.goto("/");
-  await expect(page.locator(".cm-content")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your rooms" })).toBeVisible();
 
   await page.getByRole("button", { name: "Sign out" }).click();
 
@@ -56,8 +60,9 @@ test("signing out takes you back to sign in", async ({ browser }) => {
 test("a guest signing in from a room comes back to it under their account name", async ({
   browser,
 }) => {
-  const owner = await (await memberBrowser(browser)).newPage();
-  await owner.goto("/");
+  const ownerBrowser = await memberBrowser(browser);
+  const owner = await ownerBrowser.newPage();
+  await owner.goto(`/r/${await createRoom(ownerBrowser)}`);
   await expect(owner.locator(".cm-content")).toBeVisible();
   const roomUrl = owner.url();
   const guest = await (await browser.newContext()).newPage();
