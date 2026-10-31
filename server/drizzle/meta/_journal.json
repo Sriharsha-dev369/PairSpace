@@ -8,6 +8,13 @@
       "when": 1793431159848,
       "tag": "0000_rooms_and_updates",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793431796741,
+      "tag": "0001_room_snapshots",
+      "breakpoints": true
     }
   ]
 }

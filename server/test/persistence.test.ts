@@ -35,7 +35,12 @@ describe("persistence", () => {
   // port: reuse the old server's, so people still connected find the new one
   // saveDelayMs: how long changes may wait to be written (50ms here, to keep tests fast)
   async function startServer(
-    options: { port?: number; store?: RoomStore; saveDelayMs?: number } = {},
+    options: {
+      port?: number;
+      store?: RoomStore;
+      saveDelayMs?: number;
+      snapshotEvery?: number;
+    } = {},
   ) {
     server = await createSyncServer({ port: 0, store, saveDelayMs: 50, ...options });
   }
@@ -124,6 +129,7 @@ describe("persistence", () => {
       load: (name) =>
         failures-- > 0 ? Promise.reject(new Error("database down")) : store.load(name),
       append: (name, changes) => store.append(name, changes),
+      snapshot: (name, state, upTo) => store.snapshot(name, state, upTo),
     };
     await server.close();
     await startServer({ store: flaky });
@@ -138,6 +144,13 @@ describe("persistence", () => {
   // ---------- batched writes ----------
 
   const authors = async () => (await store.history(room)).map((change) => change.author);
+
+  // the room's text as it would load from the database right now
+  async function savedText() {
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, (await store.load(room))?.state ?? new Uint8Array());
+    return doc.getText("probe").toString();
+  }
 
   it("saves a burst of typing as one change per person", async () => {
     await server.close();
@@ -189,6 +202,7 @@ describe("persistence", () => {
       load: (name) => store.load(name),
       append: (name, changes) =>
         failWrites-- > 0 ? Promise.reject(new Error("database down")) : store.append(name, changes),
+      snapshot: (name, state, upTo) => store.snapshot(name, state, upTo),
     };
     await server.close();
     await startServer({ store: flaky });
@@ -198,8 +212,48 @@ describe("persistence", () => {
     type(alice, "saved on the retry");
 
     await waitFor(async () => (await authors()).includes("Alice"), "the retry to save it");
-    const saved = new Y.Doc();
-    Y.applyUpdate(saved, (await store.load(room)) ?? new Uint8Array());
-    expect(saved.getText("probe").toString()).toBe("saved on the retry");
+    expect(await savedText()).toBe("saved on the retry");
+  });
+
+  // ---------- snapshots ----------
+
+  it("snapshots a busy room, so loading it replays only recent changes", async () => {
+    await server.close();
+    await startServer({ snapshotEvery: 3 });
+    const alice = await join("Alice");
+
+    for (const char of "abcde") {
+      const saved = (await store.history(room)).length;
+      type(alice, char);
+      await waitFor(
+        async () => (await store.history(room)).length > saved,
+        `"${char}" to be saved`,
+      );
+    }
+
+    // six changes in all (the first file, then five letters): the snapshots cover them
+    await waitFor(
+      async () => ((await store.load(room))?.replayed ?? 6) < 3,
+      "loading to start from a recent snapshot",
+    );
+    expect(await savedText()).toBe("abcde");
+  });
+
+  it("a failed snapshot neither holds up nor repeats saving", async () => {
+    const noSnapshots: RoomStore = {
+      load: (name) => store.load(name),
+      append: (name, changes) => store.append(name, changes),
+      snapshot: () => Promise.reject(new Error("disk full")),
+    };
+    await server.close();
+    await startServer({ store: noSnapshots, snapshotEvery: 1 });
+    const alice = await join("Alice");
+
+    type(alice, "saved anyway");
+
+    await waitFor(async () => (await authors()).includes("Alice"), "alice's typing to be saved");
+    await sleep(100 + SETTLE_MS); // two more save delays: room for a repeated write to appear
+    expect(await authors()).toEqual([null, "Alice"]);
+    expect(await savedText()).toBe("saved anyway");
   });
 });

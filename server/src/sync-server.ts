@@ -16,10 +16,17 @@ export interface StoredChange {
   author: string | null; // the display name of who made it; null for the server's own changes
 }
 
+export interface LoadedRoom {
+  state: Uint8Array; // the latest snapshot merged with every change after it
+  replayed: number; // how many changes came after the snapshot
+}
+
 // where rooms are saved (Postgres in production); without one, rooms live only in memory
 export interface RoomStore {
-  load(room: string): Promise<Uint8Array | null>; // every saved change merged; null if never saved
-  append(room: string, changes: StoredChange[]): Promise<void>;
+  load(room: string): Promise<LoadedRoom | null>; // null if never saved
+  append(room: string, changes: StoredChange[]): Promise<number>; // position of the last one
+  // state must include every change up to `upTo`; extra later changes are harmless
+  snapshot(room: string, state: Uint8Array, upTo: number): Promise<void>;
 }
 
 interface Options {
@@ -27,6 +34,7 @@ interface Options {
   store?: RoomStore;
   heartbeatMs?: number;
   saveDelayMs?: number;
+  snapshotEvery?: number;
   maxMessageBytes?: number;
   log?: (line: string) => void;
 }
@@ -39,6 +47,7 @@ interface Room {
   unsaved: StoredChange[]; // changes waiting for the next write
   saveTimer?: ReturnType<typeof setTimeout>;
   saving: Promise<void>; // the latest write: each waits for the one before, so rows stay in order
+  sinceSnapshot: number; // changes written since the last snapshot
 }
 
 interface AwarenessChanges {
@@ -61,6 +70,9 @@ const HEARTBEAT_MS = 10_000;
 
 // changes wait at most this long to be written; open tabs re-send anything a crash loses meanwhile
 const SAVE_DELAY_MS = 500;
+
+// rows written between snapshots (about 50s of one person typing): loading replays at most this many
+const SNAPSHOT_EVERY = 100;
 // an awareness message (type, payload length 1) listing zero people: clients apply it as a no-op
 const KEEPALIVE = new Uint8Array([MESSAGE_AWARENESS, 1, 0]);
 
@@ -103,6 +115,7 @@ export function createSyncServer({
   store,
   heartbeatMs = HEARTBEAT_MS,
   saveDelayMs = SAVE_DELAY_MS,
+  snapshotEvery = SNAPSHOT_EVERY,
   maxMessageBytes = MAX_MESSAGE_BYTES,
   log = () => {},
 }: Options): Promise<SyncServer> {
@@ -112,6 +125,7 @@ export function createSyncServer({
   const loading = new Map<string, Promise<Room>>(); // rooms being read from the store
   const beats = new Map<WebSocket, () => void>(); // what each connection does on every heartbeat
   let nextId = 1;
+  const note = (text: string) => log(`${new Date().toISOString()} ${text}`);
 
   const heartbeat = setInterval(() => {
     for (const beat of beats.values()) beat();
@@ -136,14 +150,25 @@ export function createSyncServer({
     room.saving = room.saving.then(async () => {
       const changes = room.unsaved.splice(0);
       if (!store || changes.length === 0) return;
+      const rows = mergeByAuthor(changes);
+      let upTo: number;
       try {
-        await store.append(name, mergeByAuthor(changes));
+        upTo = await store.append(name, rows);
       } catch (err) {
-        log(
-          `${new Date().toISOString()} couldn't save "${name}", retrying: ${(err as Error).message}`,
-        );
+        note(`couldn't save "${name}", retrying: ${(err as Error).message}`);
         room.unsaved.unshift(...changes);
         room.saveTimer ??= setTimeout(() => flush(name, room), saveDelayMs);
+        return;
+      }
+      room.sinceSnapshot += rows.length;
+      if (room.sinceSnapshot < snapshotEvery) return;
+      // taken after the write, so it holds every change up to upTo (and maybe a few later ones)
+      try {
+        await store.snapshot(name, Y.encodeStateAsUpdate(room.doc), upTo);
+        room.sinceSnapshot = 0;
+      } catch (err) {
+        // the changes are already saved; try again after the next write
+        note(`couldn't snapshot "${name}": ${(err as Error).message}`);
       }
     });
     return room.saving;
@@ -161,8 +186,10 @@ export function createSyncServer({
   async function openRoom(name: string): Promise<Room> {
     const doc = new Y.Doc();
     const saved = store ? await store.load(name) : null;
+    let sinceSnapshot = 0;
     if (saved) {
-      Y.applyUpdate(doc, saved);
+      Y.applyUpdate(doc, saved.state);
+      sinceSnapshot = saved.replayed;
     } else {
       // the server creates the first file: if clients did, two joining at once would race
       const file = new Y.Map<unknown>();
@@ -170,7 +197,10 @@ export function createSyncServer({
       file.set("content", new Y.Text());
       doc.getMap("files").set(crypto.randomUUID(), file);
       // saved before anyone is let in, so a restart can never give the room a second file
-      if (store) await store.append(name, [{ update: Y.encodeStateAsUpdate(doc), author: null }]);
+      if (store) {
+        await store.append(name, [{ update: Y.encodeStateAsUpdate(doc), author: null }]);
+        sinceSnapshot = 1;
+      }
     }
 
     const awareness = new awarenessProtocol.Awareness(doc);
@@ -182,6 +212,7 @@ export function createSyncServer({
       presenceOf: new Map(),
       unsaved: [],
       saving: Promise.resolve(),
+      sinceSnapshot,
     };
 
     // forward every change to everyone in the room except the connection it came from, and save it
@@ -205,9 +236,7 @@ export function createSyncServer({
     });
 
     rooms.set(name, room);
-    log(
-      `${new Date().toISOString()} room "${name}" ${saved ? "loaded" : "created"} (${rooms.size} rooms)`,
-    );
+    note(`room "${name}" ${saved ? "loaded" : "created"} (${rooms.size} rooms)`);
     return room;
   }
 

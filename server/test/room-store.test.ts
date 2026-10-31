@@ -20,12 +20,32 @@ function changesTyping(...parts: string[]): Uint8Array[] {
   return changes;
 }
 
-async function loadText(room: string) {
-  const state = await store.load(room);
-  if (state === null) return null;
+function textOf(state: Uint8Array) {
   const doc = new Y.Doc();
   Y.applyUpdate(doc, state);
   return doc.getText("t").toString();
+}
+
+async function loadText(room: string) {
+  const loaded = await store.load(room);
+  return loaded && textOf(loaded.state);
+}
+
+// a document whose every typed part is saved as it happens; returns each write's position
+function savedTyping(room: string) {
+  const doc = new Y.Doc();
+  const text = doc.getText("t");
+  return {
+    doc,
+    type(part: string) {
+      let change: Uint8Array = new Uint8Array();
+      doc.once("update", (update: Uint8Array) => {
+        change = update;
+      });
+      text.insert(text.length, part);
+      return store.append(room, [{ update: change, author: null }]);
+    },
+  };
 }
 
 describe("room store", () => {
@@ -67,5 +87,30 @@ describe("room store", () => {
 
     expect(await loadText(first)).toBe("only in the first");
     expect(await loadText(second)).toBe("only in the second");
+  });
+
+  it("loads from the latest snapshot plus only the changes after it", async () => {
+    const room = newRoom();
+    const typing = savedTyping(room);
+    await typing.type("a");
+    const upTo = await typing.type("b");
+    await store.snapshot(room, Y.encodeStateAsUpdate(typing.doc), upTo);
+    await typing.type("c");
+
+    const loaded = await store.load(room);
+
+    expect(loaded?.replayed).toBe(1); // only "c": "a" and "b" came with the snapshot
+    expect(loaded && textOf(loaded.state)).toBe("abc");
+  });
+
+  it("keeps the full history when a snapshot is taken", async () => {
+    const room = newRoom();
+    const typing = savedTyping(room);
+    await typing.type("a");
+    const upTo = await typing.type("b");
+
+    await store.snapshot(room, Y.encodeStateAsUpdate(typing.doc), upTo);
+
+    expect(await store.history(room)).toHaveLength(2);
   });
 });

@@ -10,6 +10,9 @@ const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
 export const rooms = pgTable("rooms", {
   id: text("id").primaryKey(), // the room name from its link
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // the whole document at one point, so loading needs only the changes after it
+  snapshot: bytea("snapshot"),
+  snapshotUpTo: bigint("snapshot_up_to", { mode: "number" }), // id of the last change it includes
 });
 
 // every change ever made, never edited or deleted: replay (M8) is built on it
