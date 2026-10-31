@@ -1,3 +1,6 @@
+import { LogIn, LogOut } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router";
+import { authClient } from "../auth/client";
 import { Logo } from "../ui/Logo";
 import { ShareButton } from "./ShareButton";
 import type { ConnectionStatus, Person } from "./session";
@@ -15,6 +18,7 @@ interface Props {
   status: ConnectionStatus;
   people: Person[];
   unsyncedEdits: boolean;
+  isMember: boolean; // signed in; otherwise a guest who joined through the link
 }
 
 const initials = (name: string) =>
@@ -24,7 +28,15 @@ const initials = (name: string) =>
     .join("")
     .slice(0, 2);
 
-function PersonChip({ person, testId }: { person: Person; testId: string }) {
+function PersonChip({
+  person,
+  testId,
+  isGuest = false,
+}: {
+  person: Person;
+  testId: string;
+  isGuest?: boolean;
+}) {
   return (
     <span className="flex items-center gap-1.5 rounded-full border border-line bg-raised py-0.5 pr-2.5 pl-0.5 text-xs">
       <span
@@ -38,11 +50,43 @@ function PersonChip({ person, testId }: { person: Person; testId: string }) {
         {person.name}
       </span>
       {person.isMe && <span className="text-faint">you</span>}
+      {isGuest && (
+        <span className="rounded-full bg-line px-1.5 text-[10px] font-medium text-muted">
+          guest
+        </span>
+      )}
     </span>
   );
 }
 
-export function RoomHeader({ roomId, status, people, unsyncedEdits }: Props) {
+const ACCOUNT_BUTTON =
+  "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted transition hover:bg-raised hover:text-fg";
+
+// members sign out here; guests sign in and come straight back to this room
+function AccountButton({ isMember }: { isMember: boolean }) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  if (!isMember) {
+    return (
+      <Link to={`/sign-in?next=${encodeURIComponent(pathname)}`} className={ACCOUNT_BUTTON}>
+        <LogIn size={14} />
+        Sign in
+      </Link>
+    );
+  }
+  async function signOut() {
+    await authClient.signOut();
+    navigate("/sign-in", { replace: true });
+  }
+  return (
+    <button type="button" onClick={signOut} className={ACCOUNT_BUTTON}>
+      <LogOut size={14} />
+      Sign out
+    </button>
+  );
+}
+
+export function RoomHeader({ roomId, status, people, unsyncedEdits, isMember }: Props) {
   const me = people.find((p) => p.isMe);
   const others = people.filter((p) => !p.isMe);
 
@@ -61,7 +105,7 @@ export function RoomHeader({ roomId, status, people, unsyncedEdits }: Props) {
         {others.map((person) => (
           <PersonChip key={person.id} person={person} testId="other-person" />
         ))}
-        {me && <PersonChip person={me} testId="my-name" />}
+        {me && <PersonChip person={me} testId="my-name" isGuest={!isMember} />}
 
         <span className="mx-1 h-5 w-px bg-line" />
         <span className="flex items-center gap-2 text-xs text-muted">
@@ -73,6 +117,7 @@ export function RoomHeader({ roomId, status, people, unsyncedEdits }: Props) {
             </span>
           )}
         </span>
+        <AccountButton isMember={isMember} />
         <ShareButton />
       </div>
     </header>

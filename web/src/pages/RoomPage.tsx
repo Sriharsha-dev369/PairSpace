@@ -1,23 +1,40 @@
-import { Link2Off, Loader2, Plus } from "lucide-react";
-import { type ReactNode, useEffect, useMemo } from "react";
+import { Link2Off, Loader2, SearchX } from "lucide-react";
+import { useEffect, useMemo } from "react";
 import { Link, useParams } from "react-router";
+import { type Member, useMember } from "../auth/useMember";
 import { Editor } from "../room/Editor";
 import { FileTabs } from "../room/FileTabs";
-import { guestIdentity } from "../room/guest";
+import { guestIdentity, memberIdentity } from "../room/identity";
 import { RoomHeader } from "../room/RoomHeader";
 import { StatusBar } from "../room/StatusBar";
-import type { RoomSession } from "../room/session";
+import { ROOM_NOT_FOUND, type RoomSession } from "../room/session";
 import { useRoomSession } from "../room/useRoomSession";
 import { useRoomState } from "../room/useRoomState";
+import { Card, FullScreen } from "../ui/FullScreen";
 import { LogoMark } from "../ui/Logo";
 
 export function RoomPage() {
   const { roomId = "" } = useParams();
-  const user = useMemo(guestIdentity, []);
+  const member = useMember();
+  if (member === undefined) return <Joining roomId={roomId} />;
+  // keyed by account: signing in or out rejoins the room under the new identity
+  return <JoinRoom key={member?.id ?? "guest"} roomId={roomId} member={member} />;
+}
+
+function JoinRoom({ roomId, member }: { roomId: string; member: Member | null }) {
+  const user = useMemo(() => (member ? memberIdentity(member) : guestIdentity()), [member]);
   const join = useRoomSession(roomId, user);
 
-  if (join.state === "ready") return <Room roomId={roomId} session={join.session} />;
-  if (join.state === "refused") return <RefusedRoom />;
+  if (join.state === "ready") {
+    return <Room roomId={roomId} session={join.session} isMember={member !== null} />;
+  }
+  if (join.state === "refused") {
+    return <RefusedRoom missing={join.code === ROOM_NOT_FOUND} isMember={member !== null} />;
+  }
+  return <Joining roomId={roomId} />;
+}
+
+function Joining({ roomId }: { roomId: string }) {
   return (
     <FullScreen>
       <LogoMark className="h-10 w-10" />
@@ -30,7 +47,15 @@ export function RoomPage() {
   );
 }
 
-function Room({ roomId, session }: { roomId: string; session: RoomSession }) {
+function Room({
+  roomId,
+  session,
+  isMember,
+}: {
+  roomId: string;
+  session: RoomSession;
+  isMember: boolean;
+}) {
   const { status, people, unsyncedEdits } = useRoomState(session);
   const [file] = session.files();
 
@@ -45,7 +70,13 @@ function Room({ roomId, session }: { roomId: string; session: RoomSession }) {
 
   return (
     <div className="flex h-screen flex-col">
-      <RoomHeader roomId={roomId} status={status} people={people} unsyncedEdits={unsyncedEdits} />
+      <RoomHeader
+        roomId={roomId}
+        status={status}
+        people={people}
+        unsyncedEdits={unsyncedEdits}
+        isMember={isMember}
+      />
       <FileTabs fileName={file.name} />
       <main className="min-h-0 flex-1">
         <Editor file={file} awareness={session.awareness} />
@@ -55,33 +86,32 @@ function Room({ roomId, session }: { roomId: string; session: RoomSession }) {
   );
 }
 
-function RefusedRoom() {
+// only members start rooms: a guest is offered to sign in first
+function RefusedRoom({ missing, isMember }: { missing: boolean; isMember: boolean }) {
+  const Icon = missing ? SearchX : Link2Off;
   return (
     <FullScreen>
-      <div className="w-full max-w-sm rounded-2xl border border-line bg-surface p-8 text-center shadow-2xl shadow-black/40">
-        <span className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-red-400/10 text-red-300">
-          <Link2Off size={20} />
-        </span>
-        <h1 className="mt-5 text-base font-semibold">This room link isn't valid</h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted">
-          Check the link you were sent, or start a fresh room and invite people to it.
-        </p>
-        <Link
-          to="/"
-          className="mt-6 inline-flex h-9 items-center gap-1.5 rounded-lg bg-accent px-4 text-sm font-semibold text-canvas transition hover:brightness-110"
-        >
-          <Plus size={16} strokeWidth={2.5} />
-          Start a new room
-        </Link>
-      </div>
+      <Card>
+        <div className="text-center">
+          <span className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-red-400/10 text-red-300">
+            <Icon size={20} />
+          </span>
+          <h1 className="mt-5 text-base font-semibold">
+            {missing ? "This room doesn't exist" : "This room link isn't valid"}
+          </h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            {missing
+              ? "The link may be mistyped, or the room was never created."
+              : "Check the link you were sent, or start a fresh room and invite people to it."}
+          </p>
+          <Link
+            to={isMember ? "/" : "/sign-in"}
+            className="mt-6 inline-flex h-9 items-center rounded-lg bg-accent px-4 text-sm font-semibold text-canvas transition hover:brightness-110"
+          >
+            {isMember ? "Start a new room" : "Sign in to start a room"}
+          </Link>
+        </div>
+      </Card>
     </FullScreen>
-  );
-}
-
-function FullScreen({ children }: { children: ReactNode }) {
-  return (
-    <div className="grid h-screen place-items-center bg-[radial-gradient(ellipse_at_top,rgb(139_140_255/0.10),transparent_60%)] px-4">
-      <div className="flex flex-col items-center">{children}</div>
-    </div>
   );
 }

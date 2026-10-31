@@ -1,8 +1,10 @@
 // End-to-end spec: real browsers, real web app, real sync server (started by playwright.config.ts).
 
 import { type Browser, type Dialog, expect, type Page, test } from "@playwright/test";
+import { memberBrowser } from "./members";
 
-// each person gets their own browser context: separate storage, like two different computers
+// each person gets their own browser context: separate storage, like two different computers.
+// Invited people join as guests (no account)
 async function openRoomAs(browser: Browser, url: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage();
   await page.goto(url);
@@ -10,22 +12,25 @@ async function openRoomAs(browser: Browser, url: string): Promise<Page> {
   return page;
 }
 
+// a room created by a member, who then leaves: its link is the invite
 async function newRoomUrl(browser: Browser): Promise<string> {
-  const page = await (await browser.newContext()).newPage();
+  const page = await (await memberBrowser(browser)).newPage();
   await page.goto("/");
-  await expect(page).toHaveURL(/\/r\//);
+  await expect(page.locator(".cm-content")).toBeVisible(); // joined, so the room exists
   const url = page.url();
   await page.context().close();
   return url;
 }
 
-test("opening the home page takes you to a new room link", async ({ page }) => {
+test("opening the home page takes you to a new room link", async ({ browser }) => {
+  const page = await (await memberBrowser(browser)).newPage();
   await page.goto("/");
 
   await expect(page).toHaveURL(/\/r\/[a-z0-9]{10}$/);
 });
 
-test("an invalid room link says so and offers a new room", async ({ page }) => {
+test("an invalid room link says so and offers a new room", async ({ browser }) => {
+  const page = await (await memberBrowser(browser)).newPage();
   await page.goto(`/r/${"x".repeat(65)}`); // one over the server's 64 character limit
 
   await expect(page.getByText("This room link isn't valid")).toBeVisible();
@@ -34,7 +39,9 @@ test("an invalid room link says so and offers a new room", async ({ page }) => {
 });
 
 test("the share button copies the room link", async ({ browser }) => {
-  const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"] });
+  const context = await memberBrowser(browser, {
+    permissions: ["clipboard-read", "clipboard-write"],
+  });
   const page = await context.newPage();
   await page.goto("/");
   await expect(page.locator(".cm-content")).toBeVisible();

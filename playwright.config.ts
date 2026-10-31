@@ -14,12 +14,15 @@ export default defineConfig({
   webServer: [
     {
       command: "npx tsx server/src/index.ts",
-      env: { PORT: String(SERVER_PORT) },
+      env: { PORT: String(SERVER_PORT), WEB_ORIGIN: `http://localhost:${WEB_PORT}` },
       port: SERVER_PORT,
     },
     {
       command: `npm run dev -w web -- --port ${WEB_PORT} --strictPort`,
-      env: { VITE_SYNC_URL: `ws://localhost:${SERVER_PORT}` },
+      env: {
+        VITE_SYNC_URL: `ws://localhost:${SERVER_PORT}`,
+        SERVER_URL: `http://localhost:${SERVER_PORT}`, // where Vite's /api proxy forwards to
+      },
       url: `http://localhost:${WEB_PORT}`,
     },
   ],

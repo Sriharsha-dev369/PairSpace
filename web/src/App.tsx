@@ -1,8 +1,9 @@
 import type { CSSProperties } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router";
+import { BrowserRouter, Route, Routes } from "react-router";
 import { Toaster } from "sonner";
+import { AuthPage } from "./pages/AuthPage";
+import { HomePage } from "./pages/HomePage";
 import { RoomPage } from "./pages/RoomPage";
-import { newRoomId } from "./room/room-id";
 
 // sonner reads its colours from these variables (as shadcn/ui's wrapper does); ours match the app
 const toastTheme = {
@@ -16,7 +17,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Navigate to={`/r/${newRoomId()}`} replace />} />
+        <Route path="/" element={<HomePage />} />
+        <Route path="/sign-in" element={<AuthPage mode="sign-in" />} />
+        <Route path="/sign-up" element={<AuthPage mode="sign-up" />} />
         <Route path="/r/:roomId" element={<RoomPage />} />
       </Routes>
       <Toaster theme="dark" position="bottom-right" style={toastTheme} />

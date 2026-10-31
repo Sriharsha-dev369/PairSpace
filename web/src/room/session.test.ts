@@ -57,10 +57,13 @@ describe("room session", () => {
     expect(session.files().map((f) => f.name)).toEqual(["main.js"]);
   });
 
-  it("fails to sync when the server refuses the room name", async () => {
-    const session = join("not.a.valid.room");
+  it("says why the server refused the room", async () => {
+    await expect(join("not.a.valid.room").synced).rejects.toMatchObject({ code: 4400 });
 
-    await expect(session.synced).rejects.toThrow("room");
+    await server.close();
+    // with accounts on, a guest can't open a room that doesn't exist yet
+    server = await createSyncServer({ port: 0, identify: async () => null });
+    await expect(join("never-created").synced).rejects.toMatchObject({ code: 4404 });
   });
 
   it("says it's reconnecting when the connection drops, and keeps saying so while it retries", async () => {

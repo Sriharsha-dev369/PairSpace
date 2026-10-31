@@ -20,7 +20,7 @@ M0 Relay ✅ ─► M1 Co-editing ─► M2 Reliability ─► M3 Persistence + 
 | M1 | Real-time co-editing (single file, anonymous) | L | ✅ done |
 | M2 | Reliability: heartbeats, reconnect, offline edits | M | ✅ done |
 | M3 | Persistence and database | L | ✅ done |
-| M4 | Accounts (email + GitHub) | M | in progress (4.1 accounts API, 4.2 who connects done) |
+| M4 | Accounts (email + GitHub) | M | in progress (4.1 accounts API, 4.2 who connects, 4.3 sign-in pages done; 4.4 GitHub left) |
 | M5 | Dashboard and share links with roles | M | |
 | M6 | Multi-file projects | L | |
 | M7 | In-browser Run (JS + Python) | M | |

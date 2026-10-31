@@ -7,7 +7,14 @@ const STORAGE_KEY = "pairspace:guest";
 
 const pick = <T>(items: T[]) => items[Math.floor(Math.random() * items.length)];
 
-// until accounts exist (M4), each browser gets a stable random guest identity
+// a member is shown by their account name, in a colour fixed by their user id (same everywhere)
+export function memberIdentity({ id, name }: { id: string; name: string }): User {
+  let hash = 0;
+  for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return { name, color: COLORS[hash % COLORS.length] };
+}
+
+// a guest (invited, no account) gets a random identity, kept by this browser
 export function guestIdentity(): User {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);

@@ -31,7 +31,7 @@ export interface RoomFile {
 export interface RoomSession {
   doc: Y.Doc;
   awareness: Awareness;
-  synced: Promise<void>; // resolves once the server's copy arrives; rejects if the room is refused
+  synced: Promise<void>; // resolves once the server's copy arrives; rejects with RoomRefused
   status(): ConnectionStatus;
   unsyncedEdits(): boolean; // edits made while disconnected that haven't been sent yet
   subscribe(listener: () => void): () => void; // called when status, people or files may have changed
@@ -39,6 +39,18 @@ export interface RoomSession {
   files(): RoomFile[];
   leave(): void;
 }
+
+// the server turned this room down for good; `code` says why
+export class RoomRefused extends Error {
+  readonly code: number; // 4404: doesn't exist (only members create rooms); 4400: invalid name
+
+  constructor(code: number, reason: string) {
+    super(`the server refused this room: ${reason}`);
+    this.code = code;
+  }
+}
+
+export const ROOM_NOT_FOUND = 4404;
 
 const MESSAGE_TOO_BIG = 1009; // standard close code; every retry would re-send the same change
 
@@ -118,9 +130,7 @@ export function joinRoom({
     if (provider.synced) resolve();
     else provider.once("sync", () => resolve());
     // "closed" means the server refused us for good (e.g. a bad room name); it won't retry
-    provider.once("closed", ({ reason }) =>
-      reject(new Error(`the server refused this room: ${reason}`)),
-    );
+    provider.once("closed", ({ code, reason }) => reject(new RoomRefused(code, reason)));
   });
   synced.catch(() => {}); // a caller that never awaits synced shouldn't see an unhandled rejection
 
