@@ -13,12 +13,12 @@ export type ConnectionStatus =
   | "too-large";
 
 export interface User {
+  id: string; // the same in every tab of one person: a member's user id, or a guest's stored id
   name: string;
   color: string;
 }
 
 export interface Person extends User {
-  id: number; // unique per connected client, even if two guests share a name
   isMe: boolean;
 }
 
@@ -142,15 +142,19 @@ export function joinRoom({
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    people: () =>
-      [...awareness.getStates().entries()]
-        .filter(([, state]) => state.user)
-        .map(([clientId, state]) => ({
-          id: clientId,
-          name: state.user.name,
-          color: state.user.color,
-          isMe: clientId === doc.clientID,
-        })),
+    // one entry per person, however many tabs they have open
+    people: () => {
+      const byPerson = new Map<string, Person>();
+      for (const [clientId, state] of awareness.getStates()) {
+        if (!state.user) continue;
+        // a client without a person id (an older version) counts per tab
+        const id = typeof state.user.id === "string" ? state.user.id : `tab-${clientId}`;
+        if (byPerson.has(id)) continue;
+        const { name, color } = state.user;
+        byPerson.set(id, { id, name, color, isMe: id === user.id });
+      }
+      return [...byPerson.values()];
+    },
     status: () => {
       if (tooLarge) return "too-large";
       if (offline) return "offline";

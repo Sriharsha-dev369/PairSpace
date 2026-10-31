@@ -188,3 +188,22 @@ test("pasting something too large to sync says so, and the room keeps syncing", 
   await expect(alice.locator(".cm-content")).not.toContainText("xxx");
   await expect(alice.getByTestId("connection-status")).toHaveText("Connected");
 });
+
+test("the same person with two tabs open shows up once", async ({ browser }) => {
+  const url = await newRoomUrl(browser);
+  const sameBrowser = await browser.newContext(); // tabs of one browser share its storage
+  const tab = await sameBrowser.newPage();
+  await tab.goto(url);
+  const otherTab = await sameBrowser.newPage();
+  await otherTab.goto(url);
+  await expect(otherTab.locator(".cm-content")).toBeVisible();
+  const myName = await tab.getByTestId("my-name").innerText();
+
+  await otherTab.locator(".cm-content").click();
+  await otherTab.keyboard.type("x");
+
+  // the other tab's cursor has arrived, so its presence has too
+  await expect(tab.locator(".cm-ySelectionInfo")).toHaveText(myName);
+  await expect(tab.getByTestId("other-person")).toHaveCount(0);
+  await expect(tab.getByText("Only you here")).toBeVisible();
+});

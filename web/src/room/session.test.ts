@@ -5,8 +5,8 @@ import { createSyncServer, type SyncServer } from "pairspace-server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { joinRoom, type RoomSession, type User } from "./session";
 
-const alice: User = { name: "Alice", color: "#f472b6" };
-const bob: User = { name: "Bob", color: "#60a5fa" };
+const alice: User = { id: "alice", name: "Alice", color: "#f472b6" };
+const bob: User = { id: "bob", name: "Bob", color: "#60a5fa" };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -188,9 +188,35 @@ describe("room session", () => {
 
     expect(theirs.people()).toEqual(
       expect.arrayContaining([
-        { id: mine.doc.clientID, name: "Alice", color: alice.color, isMe: false },
-        { id: theirs.doc.clientID, name: "Bob", color: bob.color, isMe: true },
+        { id: "alice", name: "Alice", color: alice.color, isMe: false },
+        { id: "bob", name: "Bob", color: bob.color, isMe: true },
       ]),
     );
+  });
+
+  it("shows each person once, however many tabs they have open", async () => {
+    const tab = join("room1", alice);
+    const otherTab = join("room1", alice); // same browser: same person
+    const theirs = join("room1", bob);
+    await Promise.all([tab.synced, otherTab.synced, theirs.synced]);
+
+    // every tab's presence has arrived everywhere
+    for (const session of [tab, theirs]) {
+      await waitFor(() => session.awareness.getStates().size === 3, "all three tabs' presence");
+    }
+
+    expect(
+      theirs
+        .people()
+        .map((p) => p.name)
+        .sort(),
+    ).toEqual(["Alice", "Bob"]);
+    expect(tab.people()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "Alice", isMe: true }),
+        expect.objectContaining({ name: "Bob", isMe: false }),
+      ]),
+    );
+    expect(tab.people()).toHaveLength(2);
   });
 });
