@@ -1,19 +1,16 @@
+import { startApp } from "./app";
 import { migrateDatabase } from "./db";
-import { openRoomStore } from "./room-store";
-import { createSyncServer } from "./sync-server";
 
 const PORT = Number(process.env.PORT ?? 8080);
 
 await migrateDatabase();
-const store = openRoomStore();
-const server = await createSyncServer({ port: PORT, store, log: console.log });
-console.log(`WebSocket server listening on ws://localhost:${PORT}`);
+const app = await startApp({ port: PORT, log: console.log });
+console.log(`Listening on port ${app.port}: accounts API at /api/auth, rooms over WebSockets`);
 
 // Ctrl+C, or a hosting platform stopping us: finish saving before exiting
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {
-    await server.close();
-    await store.close();
+    await app.close();
     process.exit(0);
   });
 }

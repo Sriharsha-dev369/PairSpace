@@ -1,3 +1,4 @@
+import type { Server } from "node:http";
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
 import { WebSocket, WebSocketServer } from "ws";
@@ -30,7 +31,8 @@ export interface RoomStore {
 }
 
 interface Options {
-  port: number; // 0 = let the OS pick a free port (used by tests)
+  port?: number; // 0 = let the OS pick a free port (used by tests)
+  server?: Server; // instead of a port: share an existing HTTP server's
   store?: RoomStore;
   heartbeatMs?: number;
   saveDelayMs?: number;
@@ -117,6 +119,7 @@ function awarenessMessage(awareness: awarenessProtocol.Awareness, clientIds: num
 
 export function createSyncServer({
   port,
+  server,
   store,
   heartbeatMs = HEARTBEAT_MS,
   saveDelayMs = SAVE_DELAY_MS,
@@ -126,7 +129,9 @@ export function createSyncServer({
   log = () => {},
 }: Options): Promise<SyncServer> {
   // ws checks a frame's declared length before reading it, so oversize messages are never buffered
-  const wss = new WebSocketServer({ port, maxPayload: maxMessageBytes });
+  const wss = new WebSocketServer(
+    server ? { server, maxPayload: maxMessageBytes } : { port, maxPayload: maxMessageBytes },
+  );
   const rooms = new Map<string, Room>();
   const loading = new Map<string, Promise<Room>>(); // rooms being read from the store
   const beats = new Map<WebSocket, () => void>(); // what each connection does on every heartbeat
@@ -384,10 +389,10 @@ export function createSyncServer({
   });
 
   return new Promise((resolve) => {
-    wss.on("listening", () => {
+    const ready = () => {
       const address = wss.address();
       resolve({
-        port: address !== null && typeof address === "object" ? address.port : port,
+        port: address !== null && typeof address === "object" ? address.port : (port ?? 0),
         roomCount: () => rooms.size,
         close: async () => {
           clearInterval(heartbeat);
@@ -398,6 +403,8 @@ export function createSyncServer({
           await Promise.all([...rooms].map(([name, room]) => flush(name, room)));
         },
       });
-    });
+    };
+    if (server?.listening) ready();
+    else wss.on("listening", ready);
   });
 }

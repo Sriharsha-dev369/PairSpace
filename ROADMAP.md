@@ -20,7 +20,7 @@ M0 Relay ✅ ─► M1 Co-editing ─► M2 Reliability ─► M3 Persistence + 
 | M1 | Real-time co-editing (single file, anonymous) | L | ✅ done |
 | M2 | Reliability: heartbeats, reconnect, offline edits | M | ✅ done |
 | M3 | Persistence and database | L | ✅ done |
-| M4 | Accounts (email + GitHub) | M | |
+| M4 | Accounts (email + GitHub) | M | in progress (4.1 accounts API done) |
 | M5 | Dashboard and share links with roles | M | |
 | M6 | Multi-file projects | L | |
 | M7 | In-browser Run (JS + Python) | M | |
@@ -47,7 +47,7 @@ Postgres (decision to confirm). Rooms and files stored; the Yjs state is saved a
 
 ### M4: Accounts
 Email and GitHub sign-in through an existing auth library (not hand-rolled). Sessions, and WebSocket connections that know who is connecting.
-- **Done when:** sign up, sign in and sign out work; an unauthenticated WebSocket cannot join a protected room.
+- **Done when:** sign up, sign in and sign out work; an unauthenticated WebSocket cannot create a room (guests join by invite link; members-only rooms come with M5's roles, decision 2026-10-31).
 - **Decisions to bring:** auth library; whether people with an invite link can join as guests (recommendation: yes, with a display name, so the first click has no signup wall).
 
 ### M5: Dashboard and share links with roles
