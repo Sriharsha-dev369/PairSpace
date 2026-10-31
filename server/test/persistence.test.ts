@@ -1,7 +1,7 @@
 // Spec for saving rooms: what survives a server restart, and what gets recorded.
 // Runs the sync server against the real test database; every test uses a fresh room name.
 
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { WebSocket } from "ws";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
@@ -34,14 +34,7 @@ describe("persistence", () => {
 
   // port: reuse the old server's, so people still connected find the new one
   // saveDelayMs: how long changes may wait to be written (50ms here, to keep tests fast)
-  async function startServer(
-    options: {
-      port?: number;
-      store?: RoomStore;
-      saveDelayMs?: number;
-      snapshotEvery?: number;
-    } = {},
-  ) {
+  async function startServer(options: Partial<Parameters<typeof createSyncServer>[0]> = {}) {
     server = await createSyncServer({ port: 0, store, saveDelayMs: 50, ...options });
   }
 
@@ -255,5 +248,117 @@ describe("persistence", () => {
     await sleep(100 + SETTLE_MS); // two more save delays: room for a repeated write to appear
     expect(await authors()).toEqual([null, "Alice"]);
     expect(await savedText()).toBe("saved anyway");
+  });
+
+  // ---------- unloading empty rooms ----------
+
+  it("unloads an empty room once everything in it is saved", async () => {
+    await server.close();
+    await startServer({ unloadAfterMs: 50, saveDelayMs: 60_000 }); // only unloading writes
+    const alice = await join("Alice");
+    const bob = await join("Bob"); // a witness: if bob has it, so does the server
+    type(alice, "saved on the way out");
+    await waitFor(() => text(bob) === "saved on the way out", "the server to receive it");
+
+    leave(alice);
+    leave(bob);
+
+    await waitFor(() => server.roomCount() === 0, "the empty room to be unloaded");
+    expect(await savedText()).toBe("saved on the way out");
+  });
+
+  it("reopens an unloaded room with its content and its one file", async () => {
+    await server.close();
+    await startServer({ unloadAfterMs: 50 });
+    const alice = await join("Alice");
+    const bob = await join("Bob");
+    const files = fileIds(alice);
+    type(alice, "still here");
+    await waitFor(() => text(bob) === "still here", "the server to receive it");
+    leave(alice);
+    leave(bob);
+    await waitFor(() => server.roomCount() === 0, "the empty room to be unloaded");
+
+    const carol = await join("Carol");
+
+    expect(text(carol)).toBe("still here");
+    expect(fileIds(carol)).toEqual(files);
+  });
+
+  it("keeps a room loaded while anyone is still in it", async () => {
+    await server.close();
+    let left = 0;
+    await startServer({
+      unloadAfterMs: 50,
+      log: (line) => (left += Number(line.includes("left"))),
+    });
+    const alice = await join("Alice");
+    await join("Bob");
+
+    leave(alice);
+
+    await waitFor(() => left === 1, "the server to see alice leave");
+    await sleep(50 + 100); // past the unload delay, with room to spare
+    expect(server.roomCount()).toBe(1);
+  });
+
+  it("keeps a room that someone joins while it's being saved to unload", async () => {
+    let holdWrites = false;
+    let held = false;
+    let release = () => {};
+    const slow: RoomStore = {
+      load: (name) => store.load(name),
+      append: async (name, changes) => {
+        if (holdWrites) {
+          held = true;
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        }
+        return store.append(name, changes);
+      },
+      snapshot: (name, state, upTo) => store.snapshot(name, state, upTo),
+    };
+    onTestFinished(() => {
+      holdWrites = false;
+      release(); // even if the test fails, so shutting the server down doesn't wait forever
+    });
+    await server.close();
+    await startServer({ store: slow, unloadAfterMs: 50, saveDelayMs: 60_000 });
+    const alice = await join("Alice"); // the room and its first file are saved
+    const witness = await join("Witness");
+    holdWrites = true;
+    type(alice, "alice's ");
+    await waitFor(() => text(witness) === "alice's ", "the server to receive alice's change");
+    leave(alice);
+    leave(witness);
+    await waitFor(() => held, "the unload's write to start");
+
+    const bob = await join("Bob"); // arrives while that write is still in flight
+    holdWrites = false;
+    release();
+    await waitFor(async () => (await savedText()) === "alice's ", "the unload's write to finish");
+    type(bob, "bob's");
+
+    const carol = await join("Carol"); // must find bob's room, not a copy reloaded without him
+    await waitFor(() => text(carol) === "alice's bob's", "carol to see bob's change");
+    expect(server.roomCount()).toBe(1);
+  });
+
+  it("keeps empty rooms loaded when there's nowhere to save them", async () => {
+    await server.close();
+    let left = 0;
+    await startServer({
+      store: undefined,
+      unloadAfterMs: 50,
+      log: (line) => (left += Number(line.includes("left"))),
+    });
+    const alice = await join("Alice");
+
+    leave(alice);
+
+    await waitFor(() => left === 1, "the server to see alice leave");
+    await sleep(50 + 100); // past the unload delay, with room to spare
+    expect(server.roomCount()).toBe(1);
   });
 });

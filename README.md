@@ -17,7 +17,7 @@ delayed networks and concurrent changes.
 
 ## Status
 
-M1 and M2 done: open the web app, share the room link, and edit one file together live with names and cursors; it survives drops, offline spells and bad networks. M3 in progress: rooms are saved to Postgres and survive a server restart. Not deployed.
+M1 and M2 done: open the web app, share the room link, and edit one file together live with names and cursors; it survives drops, offline spells and bad networks. M3 done: rooms are saved to Postgres (every change, with who made it and when) and survive a server restart. Not deployed.
 
 ## Run it
 

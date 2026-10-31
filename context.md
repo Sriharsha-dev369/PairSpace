@@ -8,7 +8,7 @@ How the three files relate:
 | `CLAUDE.md` | Working instructions for Claude (commands, stack, workflow). Local only: it is in `.gitignore` |
 | `context.md` (this file) | *Where we are*: what was reasoned, decided and learned, and what's next |
 
-Status: M1 done (live co-editing, presence, cursors, tested end to end). M2 reliability done: heartbeats, message size limit, fault-injection tests (M2's done-when), and reconnecting UX (steady Reconnecting/Offline states, leave-page warning for unsynced edits, paste guard). M3 persistence in progress: every change saved to Postgres and rooms rebuilt on first join (3.1), writes batched per room (3.2), snapshots keep loading fast (3.3). Not deployed. Last updated 2026-10-31.
+Status: M1 done (live co-editing, presence, cursors, tested end to end). M2 reliability done: heartbeats, message size limit, fault-injection tests (M2's done-when), and reconnecting UX (steady Reconnecting/Offline states, leave-page warning for unsynced edits, paste guard). M3 persistence done: every change saved to Postgres with author and time, rooms rebuilt on first join, writes batched per room, snapshots keep loading fast, empty rooms unloaded once saved; a server restart loses nothing. Next: M4 accounts. Not deployed. Last updated 2026-10-31.
 
 ---
 
@@ -155,6 +155,7 @@ Moved here from `CLAUDE.md` (which now holds only working instructions). Append 
 | 2026-10-31 | A new room's first file is saved before anyone is let in; a room that fails to load turns the client away with 1011, which clients retry | A restart can never give a room a second file (the known gap, now fixed and tested); a database hiccup costs a retry, not a broken room | Saving the first file with the first edit (a crash in between brings the second-file bug back); keeping the connection open without a room |
 | 2026-10-31 | Batched writes: a room's changes wait at most 0.5s (`saveDelayMs`), then one row per person per batch (`Y.mergeUpdates`), one write per room at a time; a failed write is put back and retried; `close()` writes everything waiting | Typing bursts become a few writes per second per room instead of one per keystroke. Open tabs re-send their copy on reconnect, so a crash loses only edits whose authors also closed their tabs within 0.5s. A dropped write must never be skipped: later Yjs changes build on it (seen in a test: one lost keystroke left the saved text empty) | Debounce until typing stops (a non-stop typist is never saved); one write per change (3.1); dropping a failed write |
 | 2026-10-31 | Snapshots: after every 100 written rows (`snapshotEvery`), the server saves the room's whole document on `rooms` with its position (the id of the last change it includes); loading = snapshot + only the changes after it. History is never deleted. `append` returns the position and the server passes it explicitly; a failed snapshot is logged and retried after the next write | Load cost stays bounded while replay (M8) keeps every change. The state is captured after the write, so it holds everything up to its position (a few extra later changes are harmless: applying a change twice changes nothing). An explicit position stays correct even when another writer appends meanwhile (Phase 2) | Deleting old changes after a snapshot (breaks replay); the store taking the latest row as the position (wrong with two writers); snapshots on a timer (idle rooms snapshot for nothing); guarding against an older snapshot replacing a newer one (it only costs extra replay, never data) |
+| 2026-10-31 | Unload an empty room 30s after the last person leaves (`unloadAfterMs`): write everything waiting, check again that it's still empty, then drop it; never without a store; joining cancels a pending unload; `close()` cancels them all | Frees memory without a database read on every page reload; the re-check closes the race where someone joins while the last write is in flight (dropping the room then would leave them in a copy nobody else can reach, seen in a test) | Unloading at once (every reload re-reads the room); never unloading (memory grows with every room ever opened); unloading without a store (loses the room) |
 
 **Open decisions:** hosting (decide when the MVP is ready; a managed platform was the recommendation); when wiring Yjs, use `y-websocket`'s ready-made server instead of our own relay?
 
@@ -164,7 +165,7 @@ Yjs merges bytes in memory. Everything else is ours.
 
 | # | Problem | How to verify |
 |---|---|---|
-| 1 | **Persistence**: when to save, durability vs write load, log growth and compaction | Kill the server mid-typing, then measure loss and growth |
+| 1 | **Persistence**: when to save, durability vs write load, log growth and compaction. Built in M3 as an append-only change log with author and time, 0.5s batches per person, snapshots every 100 rows (history kept for replay), unloading after 30s empty | Kill the server mid-typing, then measure loss and growth |
 | 2 | **Reconnect/resync**: duplicate or partial delivery, server restart, long-offline client | Fault-inject disconnects, then check identical docs and time the recovery |
 | 3 | **Fault-injection harness**: delay/drop/reorder/duplicate proxy plus convergence checker. Built in M2 as delay, cut, offline and freeze (reorder and duplicate can't happen on one TCP connection; they matter again with several servers in Phase 2) | Chaos run, check the docs never differ |
 | 4 | **Room lifecycle and scaling**: load/evict rooms, memory per room, multi-server routing | Load test; watch memory |
@@ -177,18 +178,18 @@ Also: collaborative undo/redo (each user undoes only their own edits) is subtle,
 
 ## 7. Current position and next steps
 
-**M1 and M2 are done.** Two people on the same room link co-edit one file live, with names, colours, labelled cursors and a connection status. Dead connections are noticed, offline edits merge on return, and the UI says when it's reconnecting or offline.
+**M1, M2 and M3 are done.** Two people on the same room link co-edit one file live, with names, colours, labelled cursors and a connection status. Dead connections are noticed, offline edits merge on return, and the UI says when it's reconnecting or offline. Rooms are saved to Postgres and survive a server restart.
 
 | Part | Where | Tests |
 |---|---|---|
 | Sync server: Yjs sync and presence over WebSocket, rooms in memory and loaded from / saved to a store, server-created first file, input validation, heartbeats, message size limit | `server/src/sync-server.ts` (started by `server/src/index.ts`) | `server/test/sync-server.test.ts` (35) |
-| Room store: saves every change to Postgres, loads rooms back, history for replay | `server/src/room-store.ts`, `server/src/schema.ts`, migrations in `server/drizzle/` | `server/test/room-store.test.ts` (6), `server/test/persistence.test.ts` (10) |
+| Room store: saves every change to Postgres, loads rooms back, history for replay | `server/src/room-store.ts`, `server/src/schema.ts`, migrations in `server/drizzle/` | `server/test/room-store.test.ts` (6), `server/test/persistence.test.ts` (15) |
 | Faulty network (tests only): TCP proxy that delays, cuts, goes offline or freezes a client's link | `server/test/faulty-network.ts` | used by the sync server tests |
 | Room session: the client-side module the UI uses (join, files, people, status incl. reconnecting/offline, unsynced edits, change notifications) | `web/src/room/session.ts` | `web/src/room/session.test.ts` (10) |
 | Paste guard: CodeMirror filter refusing a change too large to sync | `web/src/room/syncSizeLimit.ts` | `web/src/room/syncSizeLimit.test.ts` (4) |
 | UI: routing, room page, header, CodeMirror editor, guest identity | `web/src/App.tsx`, `web/src/pages/RoomPage.tsx`, `web/src/room/*.tsx`, `web/src/room/guest.ts` | `e2e/room.spec.ts` (12) + `e2e/smoke.spec.ts` |
 
-**Known gaps (planned):** empty rooms stay in memory until the server restarts (3.4); authors are display names, which aren't unique (M4: user ids); any visit to a new room link creates a saved room (M5 creates rooms explicitly, M11 rate limits); losing wifi shows at once, but a silently dead server or path is noticed only after y-websocket's 30s silence limit; edits made offline live only in the tab until reconnect (closing it asks first; `y-indexeddb` after M3/M5); edits sent in the moments before a silent failure is noticed aren't counted as unsynced (they still sync on reconnect); each change is capped at 1 MiB, but many offline edits can still add up past the server's 2 MiB on reconnect, and rooms have no total size cap (M3/M11); the web bundle is 866 kB, needs code splitting (M10).
+**Known gaps (planned):** authors are display names, which aren't unique (M4: user ids); any visit to a new room link creates a saved room (M5 creates rooms explicitly, M11 rate limits); losing wifi shows at once, but a silently dead server or path is noticed only after y-websocket's 30s silence limit; edits made offline live only in the tab until reconnect (closing it asks first; `y-indexeddb` after M3/M5); edits sent in the moments before a silent failure is noticed aren't counted as unsynced (they still sync on reconnect); each change is capped at 1 MiB, but many offline edits can still add up past the server's 2 MiB on reconnect, and rooms have no total size cap (M3/M11); the web bundle is 866 kB, needs code splitting (M10).
 
-**Next: rest of M3** (3.4 unloading empty rooms). See `ROADMAP.md`.
+**Next: M4 accounts** (decisions to bring: the auth library, and whether invite-link guests can join without signing up; recommendation yes). See `ROADMAP.md`.
 

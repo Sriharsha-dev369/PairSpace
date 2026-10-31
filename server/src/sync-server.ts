@@ -35,6 +35,7 @@ interface Options {
   heartbeatMs?: number;
   saveDelayMs?: number;
   snapshotEvery?: number;
+  unloadAfterMs?: number;
   maxMessageBytes?: number;
   log?: (line: string) => void;
 }
@@ -48,6 +49,7 @@ interface Room {
   saveTimer?: ReturnType<typeof setTimeout>;
   saving: Promise<void>; // the latest write: each waits for the one before, so rows stay in order
   sinceSnapshot: number; // changes written since the last snapshot
+  unloadTimer?: ReturnType<typeof setTimeout>;
 }
 
 interface AwarenessChanges {
@@ -73,6 +75,9 @@ const SAVE_DELAY_MS = 500;
 
 // rows written between snapshots (about 50s of one person typing): loading replays at most this many
 const SNAPSHOT_EVERY = 100;
+
+// how long an empty room stays in memory: a reload or a blip reconnects well within it
+const UNLOAD_AFTER_MS = 30_000;
 // an awareness message (type, payload length 1) listing zero people: clients apply it as a no-op
 const KEEPALIVE = new Uint8Array([MESSAGE_AWARENESS, 1, 0]);
 
@@ -116,6 +121,7 @@ export function createSyncServer({
   heartbeatMs = HEARTBEAT_MS,
   saveDelayMs = SAVE_DELAY_MS,
   snapshotEvery = SNAPSHOT_EVERY,
+  unloadAfterMs = UNLOAD_AFTER_MS,
   maxMessageBytes = MAX_MESSAGE_BYTES,
   log = () => {},
 }: Options): Promise<SyncServer> {
@@ -172,6 +178,18 @@ export function createSyncServer({
       }
     });
     return room.saving;
+  }
+
+  // drops an empty room from memory once everything in it is written
+  async function unload(name: string, room: Room) {
+    room.unloadTimer = undefined;
+    await flush(name, room);
+    // someone may have joined while that write was in flight: dropping the room now would split it
+    if (room.conns.size > 0 || rooms.get(name) !== room) return;
+    rooms.delete(name);
+    room.awareness.destroy();
+    room.doc.destroy();
+    note(`room "${name}" unloaded (${rooms.size} rooms)`);
   }
 
   // who is behind a connection, by the display name in the presence it sent
@@ -255,6 +273,8 @@ export function createSyncServer({
   // puts a connection in its room, and returns what to do with each message it sends
   function admit(socket: WebSocket, name: string, room: Room, say: (text: string) => void) {
     const { doc, awareness, conns, presenceOf } = room;
+    clearTimeout(room.unloadTimer);
+    room.unloadTimer = undefined;
     conns.add(socket);
     presenceOf.set(socket, new Set());
     say(`joined "${name}" (${conns.size} in room)`);
@@ -294,7 +314,10 @@ export function createSyncServer({
       if (owned && owned.size > 0) {
         awarenessProtocol.removeAwarenessStates(awareness, [...owned], null);
       }
-      // empty rooms stay loaded: dropping the doc before it can be saved (M3) loses the file ids
+      // without a store, an unloaded room would be lost, so it stays
+      if (conns.size === 0 && store) {
+        room.unloadTimer = setTimeout(() => unload(name, room), unloadAfterMs);
+      }
     });
 
     return (data: ArrayBuffer) => {
@@ -368,6 +391,7 @@ export function createSyncServer({
         roomCount: () => rooms.size,
         close: async () => {
           clearInterval(heartbeat);
+          for (const room of rooms.values()) clearTimeout(room.unloadTimer);
           for (const client of wss.clients) client.terminate();
           await new Promise<void>((done) => wss.close(() => done()));
           // nothing new can arrive now: write whatever is still waiting

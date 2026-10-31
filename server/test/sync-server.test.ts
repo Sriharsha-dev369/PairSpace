@@ -560,10 +560,4 @@ describe("sync server", () => {
       expect(drops, "the network really dropped connections").toBeGreaterThan(0);
     });
   });
-
-  // ---------- known gaps: not built yet, tracked here so we don't forget ----------
-
-  describe("not built yet", () => {
-    it.todo("unloads an empty room once its document is saved (M3)");
-  });
 });
