@@ -1,6 +1,7 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
+import { fromNodeHeaders } from "better-auth/node";
 import { Hono } from "hono";
 import { createAuth } from "./auth";
 import { DATABASE_URL } from "./db";
@@ -39,7 +40,15 @@ export async function startApp({
     const server = serve({ fetch: api.fetch, port }, () => resolve(server as Server));
   });
   // WebSocket upgrade requests arrive on the same server, carrying the session cookie
-  const sync = await createSyncServer({ server: http, store, log });
+  const sync = await createSyncServer({
+    server: http,
+    store,
+    log,
+    identify: async (request) => {
+      const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
+      return session && { id: session.user.id, name: session.user.name };
+    },
+  });
 
   return {
     port: (http.address() as AddressInfo).port,

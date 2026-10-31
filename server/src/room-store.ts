@@ -39,7 +39,14 @@ export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
         await tx.insert(rooms).values({ id: room }).onConflictDoNothing();
         const written = await tx
           .insert(roomUpdates)
-          .values(changes.map((c) => ({ roomId: room, data: c.update, author: c.author })))
+          .values(
+            changes.map((c) => ({
+              roomId: room,
+              data: c.update,
+              author: c.author,
+              authorId: c.authorId,
+            })),
+          )
           .returning({ id: roomUpdates.id });
         return Math.max(...written.map((row) => row.id));
       });
@@ -55,7 +62,12 @@ export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
         .from(roomUpdates)
         .where(eq(roomUpdates.roomId, room))
         .orderBy(asc(roomUpdates.id));
-      return rows.map((r) => ({ update: r.data, author: r.author, at: r.createdAt }));
+      return rows.map((r) => ({
+        update: r.data,
+        author: r.author,
+        authorId: r.authorId,
+        at: r.createdAt,
+      }));
     },
 
     close: () => pool.end(),

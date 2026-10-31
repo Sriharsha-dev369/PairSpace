@@ -43,7 +43,7 @@ function savedTyping(room: string) {
         change = update;
       });
       text.insert(text.length, part);
-      return store.append(room, [{ update: change, author: null }]);
+      return store.append(room, [{ update: change, author: null, authorId: null }]);
     },
   };
 }
@@ -56,7 +56,7 @@ describe("room store", () => {
   it("loads back the changes saved for a room", async () => {
     const room = newRoom();
     for (const update of changesTyping("hello", " world")) {
-      await store.append(room, [{ update, author: "Alice" }]);
+      await store.append(room, [{ update, author: "Alice", authorId: null }]);
     }
 
     expect(await loadText(room)).toBe("hello world");
@@ -65,10 +65,10 @@ describe("room store", () => {
   it("keeps every change with its author and time, oldest first", async () => {
     const room = newRoom();
     const [a, b, c] = changesTyping("a", "b", "c");
-    await store.append(room, [{ update: a, author: "Alice" }]);
+    await store.append(room, [{ update: a, author: "Alice", authorId: null }]);
     await store.append(room, [
-      { update: b, author: null },
-      { update: c, author: "Bob" },
+      { update: b, author: null, authorId: null },
+      { update: c, author: "Bob", authorId: null },
     ]);
 
     const history = await store.history(room);
@@ -82,8 +82,8 @@ describe("room store", () => {
     const [first, second] = [newRoom(), newRoom()];
     const [a] = changesTyping("only in the first");
     const [b] = changesTyping("only in the second");
-    await store.append(first, [{ update: a, author: null }]);
-    await store.append(second, [{ update: b, author: null }]);
+    await store.append(first, [{ update: a, author: null, authorId: null }]);
+    await store.append(second, [{ update: b, author: null, authorId: null }]);
 
     expect(await loadText(first)).toBe("only in the first");
     expect(await loadText(second)).toBe("only in the second");

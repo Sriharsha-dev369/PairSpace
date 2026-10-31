@@ -1,4 +1,4 @@
-import type { Server } from "node:http";
+import type { IncomingMessage, Server } from "node:http";
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
 import { WebSocket, WebSocketServer } from "ws";
@@ -14,7 +14,14 @@ export interface SyncServer {
 
 export interface StoredChange {
   update: Uint8Array;
-  author: string | null; // the display name of who made it; null for the server's own changes
+  author: string | null; // the name shown at the time; null for the server's own changes
+  authorId: string | null; // the member's user id; null for guests and the server
+}
+
+// a signed-in member, as verified from their session
+export interface Member {
+  id: string;
+  name: string;
 }
 
 export interface LoadedRoom {
@@ -34,6 +41,9 @@ interface Options {
   port?: number; // 0 = let the OS pick a free port (used by tests)
   server?: Server; // instead of a port: share an existing HTTP server's
   store?: RoomStore;
+  // who a connection belongs to, from its upgrade request (session cookie); null = a guest.
+  // Without it, everyone is treated alike and may create rooms
+  identify?: (request: IncomingMessage) => Promise<Member | null>;
   heartbeatMs?: number;
   saveDelayMs?: number;
   snapshotEvery?: number;
@@ -47,6 +57,7 @@ interface Room {
   awareness: awarenessProtocol.Awareness; // live presence (names, cursors), never saved
   conns: Set<WebSocket>;
   presenceOf: Map<WebSocket, Set<number>>; // the awareness client ids each connection owns
+  memberOf: Map<WebSocket, Member>; // signed-in connections; the rest are guests
   unsaved: StoredChange[]; // changes waiting for the next write
   saveTimer?: ReturnType<typeof setTimeout>;
   saving: Promise<void>; // the latest write: each waits for the one before, so rows stay in order
@@ -68,6 +79,7 @@ const MESSAGE_AWARENESS = 1;
 const CLOSE_INVALID_ROOM = 4400;
 const CLOSE_MALFORMED = 1007; // standard WebSocket code for "invalid payload data"
 const CLOSE_TRY_AGAIN = 1011; // standard "server error": clients retry it
+const CLOSE_NO_ROOM = 4404; // a guest opened a room that doesn't exist (only members create rooms)
 
 // y-websocket clients drop a connection they hear nothing on for 30s, so beat well inside that
 const HEARTBEAT_MS = 10_000;
@@ -86,18 +98,25 @@ const KEEPALIVE = new Uint8Array([MESSAGE_AWARENESS, 1, 0]);
 // the biggest legit message is a whole room re-sent after the server lost it; refuse more (1009)
 const MAX_MESSAGE_BYTES = 2 * 1024 * 1024;
 
+// a guest's name comes from their browser, so it's capped before it's saved
+const MAX_GUEST_NAME = 64;
+
 // the room name comes from the URL, which the client controls, so restrict it
 const ROOM_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 // one row per person per batch: replay still knows who wrote what, without a row per keystroke
 function mergeByAuthor(changes: StoredChange[]): StoredChange[] {
-  const byAuthor = new Map<string | null, Uint8Array[]>();
-  for (const { update, author } of changes) {
-    const theirs = byAuthor.get(author);
-    if (theirs) theirs.push(update);
-    else byAuthor.set(author, [update]);
+  const byAuthor = new Map<string, { change: StoredChange; updates: Uint8Array[] }>();
+  for (const change of changes) {
+    const key = JSON.stringify([change.authorId, change.author]);
+    const theirs = byAuthor.get(key);
+    if (theirs) theirs.updates.push(change.update);
+    else byAuthor.set(key, { change, updates: [change.update] });
   }
-  return [...byAuthor].map(([author, updates]) => ({ author, update: Y.mergeUpdates(updates) }));
+  return [...byAuthor.values()].map(({ change, updates }) => ({
+    ...change,
+    update: Y.mergeUpdates(updates),
+  }));
 }
 
 function syncMessage(write: (encoder: encoding.Encoder) => void): Uint8Array {
@@ -121,6 +140,7 @@ export function createSyncServer({
   port,
   server,
   store,
+  identify,
   heartbeatMs = HEARTBEAT_MS,
   saveDelayMs = SAVE_DELAY_MS,
   snapshotEvery = SNAPSHOT_EVERY,
@@ -133,7 +153,7 @@ export function createSyncServer({
     server ? { server, maxPayload: maxMessageBytes } : { port, maxPayload: maxMessageBytes },
   );
   const rooms = new Map<string, Room>();
-  const loading = new Map<string, Promise<Room>>(); // rooms being read from the store
+  const opening = new Map<string, Promise<unknown>>(); // the latest attempt to open each room
   const beats = new Map<WebSocket, () => void>(); // what each connection does on every heartbeat
   let nextId = 1;
   const note = (text: string) => log(`${new Date().toISOString()} ${text}`);
@@ -197,22 +217,28 @@ export function createSyncServer({
     note(`room "${name}" unloaded (${rooms.size} rooms)`);
   }
 
-  // who is behind a connection, by the display name in the presence it sent
-  function authorOf(room: Room, origin: unknown): string | null {
+  // who made a change: a member as their session says, a guest by the name their presence shows
+  function authorOf(room: Room, origin: unknown): Pick<StoredChange, "author" | "authorId"> {
+    const member = room.memberOf.get(origin as WebSocket);
+    if (member) return { author: member.name, authorId: member.id };
     for (const clientId of room.presenceOf.get(origin as WebSocket) ?? []) {
       const name = room.awareness.getStates().get(clientId)?.user?.name;
-      if (typeof name === "string") return name;
+      if (typeof name === "string")
+        return { author: name.slice(0, MAX_GUEST_NAME), authorId: null };
     }
-    return null;
+    return { author: null, authorId: null };
   }
 
-  async function openRoom(name: string): Promise<Room> {
+  // loads a room from the store; a room never saved is created only if `mayCreate`, else null
+  async function openRoom(name: string, mayCreate: boolean): Promise<Room | null> {
     const doc = new Y.Doc();
     const saved = store ? await store.load(name) : null;
     let sinceSnapshot = 0;
     if (saved) {
       Y.applyUpdate(doc, saved.state);
       sinceSnapshot = saved.replayed;
+    } else if (!mayCreate) {
+      return null;
     } else {
       // the server creates the first file: if clients did, two joining at once would race
       const file = new Y.Map<unknown>();
@@ -221,7 +247,9 @@ export function createSyncServer({
       doc.getMap("files").set(crypto.randomUUID(), file);
       // saved before anyone is let in, so a restart can never give the room a second file
       if (store) {
-        await store.append(name, [{ update: Y.encodeStateAsUpdate(doc), author: null }]);
+        await store.append(name, [
+          { update: Y.encodeStateAsUpdate(doc), author: null, authorId: null },
+        ]);
         sinceSnapshot = 1;
       }
     }
@@ -233,6 +261,7 @@ export function createSyncServer({
       awareness,
       conns: new Set(),
       presenceOf: new Map(),
+      memberOf: new Map(),
       unsaved: [],
       saving: Promise.resolve(),
       sinceSnapshot,
@@ -245,7 +274,7 @@ export function createSyncServer({
         syncMessage((e) => syncProtocol.writeUpdate(e, update)),
         origin,
       );
-      queueSave(name, room, { update, author: authorOf(room, origin) });
+      queueSave(name, room, { update, ...authorOf(room, origin) });
     });
 
     awareness.on("update", ({ added, updated, removed }: AwarenessChanges, origin: unknown) => {
@@ -263,26 +292,39 @@ export function createSyncServer({
     return room;
   }
 
-  // the room in memory, or loaded from the store; people joining at once share one load
-  function getRoom(name: string): Promise<Room> {
-    const room = rooms.get(name);
-    if (room) return Promise.resolve(room);
-    let load = loading.get(name);
-    if (!load) {
-      load = openRoom(name).finally(() => loading.delete(name));
-      loading.set(name, load);
-    }
-    return load;
+  // the room in memory, else from the store, else created if `mayCreate`. Attempts on one room
+  // run one after another, so a guest and a member arriving at once can't race each other
+  function getRoom(name: string, mayCreate: boolean): Promise<Room | null> {
+    const inMemory = rooms.get(name);
+    if (inMemory) return Promise.resolve(inMemory);
+    const attempt = (opening.get(name) ?? Promise.resolve())
+      .catch(() => {}) // a failed earlier attempt doesn't stop this one
+      .then(() => rooms.get(name) ?? openRoom(name, mayCreate));
+    opening.set(name, attempt);
+    const forget = () => {
+      if (opening.get(name) === attempt) opening.delete(name);
+    };
+    attempt.then(forget, forget);
+    return attempt;
   }
 
   // puts a connection in its room, and returns what to do with each message it sends
-  function admit(socket: WebSocket, name: string, room: Room, say: (text: string) => void) {
-    const { doc, awareness, conns, presenceOf } = room;
+  function admit(
+    socket: WebSocket,
+    name: string,
+    room: Room,
+    member: Member | null,
+    say: (text: string) => void,
+  ) {
+    const { doc, awareness, conns, presenceOf, memberOf } = room;
+    if (member) memberOf.set(socket, member);
     clearTimeout(room.unloadTimer);
     room.unloadTimer = undefined;
     conns.add(socket);
     presenceOf.set(socket, new Set());
-    say(`joined "${name}" (${conns.size} in room)`);
+    say(
+      `joined "${name}" as ${member ? `member ${member.id}` : "a guest"} (${conns.size} in room)`,
+    );
 
     // start the handshake: tell the client what the server already has
     socket.send(syncMessage((e) => syncProtocol.writeSyncStep1(e, doc)));
@@ -314,6 +356,7 @@ export function createSyncServer({
       say(`left "${name}", code ${code} (${conns.size} in room)`);
 
       // a dropped connection never says goodbye, so remove its presence for everyone else
+      memberOf.delete(socket);
       const owned = presenceOf.get(socket);
       presenceOf.delete(socket);
       if (owned && owned.size > 0) {
@@ -375,17 +418,24 @@ export function createSyncServer({
     };
     socket.on("message", (data) => receive(data as ArrayBuffer));
 
-    getRoom(name).then(
-      (room) => {
-        if (socket.readyState !== WebSocket.OPEN) return; // left while the room was loading
-        receive = admit(socket, name, room, say);
+    void (async () => {
+      try {
+        const member = identify ? await identify(req) : null;
+        // without accounts (no identify), everyone may create rooms
+        const room = await getRoom(name, !identify || member !== null);
+        if (socket.readyState !== WebSocket.OPEN) return; // left while the room was opening
+        if (!room) {
+          say(`refused: "${name}" doesn't exist, and only members create rooms`);
+          socket.close(CLOSE_NO_ROOM, "room not found");
+          return;
+        }
+        receive = admit(socket, name, room, member, say);
         for (const data of early) receive(data);
-      },
-      (err: Error) => {
-        say(`couldn't load "${name}", turning away: ${err.message}`);
+      } catch (err) {
+        say(`couldn't open "${name}", turning away: ${(err as Error).message}`);
         socket.close(CLOSE_TRY_AGAIN, "room unavailable, try again");
-      },
-    );
+      }
+    })();
   });
 
   return new Promise((resolve) => {

@@ -24,7 +24,8 @@ export const roomUpdates = pgTable(
       .notNull()
       .references(() => rooms.id, { onDelete: "cascade" }),
     data: bytea("data").notNull(),
-    author: text("author"), // who made it, by display name; null for the server's own (M4: user id)
+    author: text("author"), // the name shown at the time; null for the server's own changes
+    authorId: text("author_id").references(() => users.id, { onDelete: "set null" }), // members only
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("room_updates_room_id_id_idx").on(t.roomId, t.id)],
