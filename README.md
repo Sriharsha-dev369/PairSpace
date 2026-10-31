@@ -17,7 +17,7 @@ delayed networks and concurrent changes.
 
 ## Status
 
-M1 and M2 done: open the web app, share the room link, and edit one file together live with names and cursors; it survives drops, offline spells and bad networks. M3 done: rooms are saved to Postgres (every change, with who made it and when) and survive a server restart. M4 in progress: sign up and sign in with email and password; members create rooms, invited guests join by link. Not deployed.
+M1 and M2 done: open the web app, share the room link, and edit one file together live with names and cursors; it survives drops, offline spells and bad networks. M3 done: rooms are saved to Postgres (every change, with who made it and when) and survive a server restart. M4 done: sign up with email and password or GitHub; members create rooms, invited guests join by link. Not deployed.
 
 ## Run it
 
@@ -27,6 +27,7 @@ npm workspaces: `server/` (WebSocket server) and `web/` (Vite + React app). Run 
 
 ```
 npm install
+cp .env.example .env    # optional: GitHub sign-in needs an OAuth App's id and secret (see the file)
 npm run db:up           # Postgres in Docker on localhost:5433 (npm run db:down to stop)
 npm run dev -w server   # server on ws://localhost:8080 (restarts on change)
 npm run dev -w web      # web app on http://localhost:5173 (sign up there to start a room)

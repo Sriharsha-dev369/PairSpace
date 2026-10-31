@@ -14,7 +14,13 @@ export default defineConfig({
   webServer: [
     {
       command: "npx tsx server/src/index.ts",
-      env: { PORT: String(SERVER_PORT), WEB_ORIGIN: `http://localhost:${WEB_PORT}` },
+      env: {
+        PORT: String(SERVER_PORT),
+        WEB_ORIGIN: `http://localhost:${WEB_PORT}`,
+        // a placeholder GitHub app: tests check we send people to GitHub, not GitHub itself
+        GITHUB_CLIENT_ID: "e2e-github-app",
+        GITHUB_CLIENT_SECRET: "e2e-github-secret",
+      },
       port: SERVER_PORT,
     },
     {

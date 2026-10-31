@@ -105,3 +105,39 @@ describe("accounts", () => {
     expect(await signedInAs(cookie)).toBe(email);
   });
 });
+
+describe("signing in with GitHub", () => {
+  const GITHUB = { clientId: "test-github-app", clientSecret: "test-github-secret" };
+  let withGitHub: App;
+  beforeAll(async () => {
+    withGitHub = await startApp({
+      port: 0,
+      databaseUrl: TEST_DATABASE_URL,
+      webOrigin: WEB_ORIGIN,
+      github: GITHUB,
+    });
+  });
+  afterAll(() => withGitHub.close());
+
+  const methods = async (server: App) =>
+    (await fetch(`http://localhost:${server.port}/api/sign-in-methods`)).json();
+
+  it("offers GitHub sign-in only when it's set up", async () => {
+    expect(await methods(app)).toEqual({ github: false });
+    expect(await methods(withGitHub)).toEqual({ github: true });
+  });
+
+  it("sends people to GitHub with our app's id, and asks GitHub to send them back to us", async () => {
+    const response = await fetch(`http://localhost:${withGitHub.port}/api/auth/sign-in/social`, {
+      method: "POST",
+      headers: { origin: WEB_ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({ provider: "github", callbackURL: "/r/abc123" }),
+    });
+
+    const goTo = new URL((await response.json()).url);
+    expect(goTo.origin + goTo.pathname).toBe("https://github.com/login/oauth/authorize");
+    expect(goTo.searchParams.get("client_id")).toBe(GITHUB.clientId);
+    expect(goTo.searchParams.get("redirect_uri")).toBe(`${WEB_ORIGIN}/api/auth/callback/github`);
+    expect(goTo.searchParams.get("state")).toBeTruthy(); // checked on the way back
+  });
+});

@@ -82,3 +82,23 @@ test("a link to a room that doesn't exist says so", async ({ page }) => {
   await expect(page.getByText("This room doesn't exist")).toBeVisible();
   await expect(page.getByRole("link", { name: "Sign in to start a room" })).toBeVisible();
 });
+
+test("the GitHub button takes you to GitHub's sign-in", async ({ page }) => {
+  // the e2e server has a placeholder GitHub app (playwright.config.ts); GitHub itself isn't called
+  await page.route("https://github.com/**", (route) => route.fulfill({ body: "GitHub sign-in" }));
+  await page.goto("/sign-in");
+
+  await page.getByRole("button", { name: "Continue with GitHub" }).click();
+
+  await expect(page).toHaveURL(
+    /^https:\/\/github\.com\/login\/oauth\/authorize\?.*client_id=e2e-github-app/,
+  );
+});
+
+test("a GitHub sign-in that didn't work says so", async ({ page }) => {
+  await page.goto("/sign-in?error=access_denied"); // where GitHub's failures land
+
+  await expect(page.getByRole("alert")).toHaveText(
+    "Signing in with GitHub didn't work. Please try again.",
+  );
+});
