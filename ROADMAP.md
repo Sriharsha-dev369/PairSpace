@@ -26,7 +26,7 @@ M0 Relay ✅ ─► M1 Co-editing ─► M2 Reliability ─► M3 Persistence + 
 | M7 | In-browser Run (JS + Python) | M | |
 | M8 | Session replay | M | |
 | M9 | Sync inspector and bad-network toggle | M | |
-| M10 | Landing page and polish | M | |
+| M10 | Landing page and polish | M | started: home page and sign-in redesign done early (2026-11-01); polish pass left |
 | M11 | Hardening and deploy | M | |
 
 ## Milestones

@@ -79,7 +79,7 @@ export function Dashboard({ member }: { member: Member }) {
       <main className="mx-auto max-w-3xl px-4 py-12">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">Your rooms</h1>
+            <h1 className="font-display text-2xl font-semibold tracking-[-0.025em]">Your rooms</h1>
             <p className="mt-1 text-sm text-muted">
               Open one to code together, or start a new one and share its link.
             </p>
