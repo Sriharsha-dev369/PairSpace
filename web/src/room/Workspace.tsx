@@ -1,5 +1,9 @@
 import { Trash2 } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
+import { RunControl, RunPanel } from "../run/RunPanel";
+import { requestStop, runStatus } from "../run/runState";
+import { useCurrentRun, useRunner } from "../run/useRunner";
 import { Editor } from "./Editor";
 import { FileList } from "./FileList";
 import { FileTabs } from "./FileTabs";
@@ -30,6 +34,10 @@ interface Props {
 export function Workspace({ session, files, trash, people, viewOnly }: Props) {
   const { tabs, active, openFile, closeFile } = useOpenFiles(session, files, trash);
   const deleted = active && isTrashed(active) ? active : null;
+  const runner = useRunner(session);
+  const run = useCurrentRun(session);
+  const runShows = run && runStatus(run, new Set(session.awareness.getStates().keys()));
+  const [hiddenRun, setHiddenRun] = useState<string | null>(null); // whose output I closed
 
   function remove(file: RoomFile) {
     deleteFile(session.doc, file.id, session.me.name);
@@ -62,13 +70,25 @@ export function Workspace({ session, files, trash, people, viewOnly }: Props) {
           onRestore={(id) => restoreFile(session.doc, id)}
         />
         <div className="flex min-w-0 flex-1 flex-col">
-          <FileTabs
-            tabs={tabs}
-            names={displayNames(files)}
-            activeId={active?.id ?? null}
-            onSelect={openFile}
-            onClose={closeFile}
-          />
+          <div className="flex h-9 shrink-0 items-center border-b border-line bg-surface">
+            <FileTabs
+              tabs={tabs}
+              names={displayNames(files)}
+              activeId={active?.id ?? null}
+              onSelect={openFile}
+              onClose={closeFile}
+            />
+            {!viewOnly && (
+              <div className="shrink-0 px-2">
+                <RunControl
+                  file={active}
+                  busy={runShows === "running"}
+                  onRun={() => active && runner.run(active)}
+                  onStop={() => run && requestStop(session.doc, run.id, session.me.name)}
+                />
+              </div>
+            )}
+          </div>
           {deleted && (
             <DeletedBanner
               file={deleted}
@@ -92,6 +112,9 @@ export function Workspace({ session, files, trash, people, viewOnly }: Props) {
               </p>
             )}
           </main>
+          {run && runShows && hiddenRun !== run.id && (
+            <RunPanel run={run} status={runShows} onHide={() => setHiddenRun(run.id)} />
+          )}
         </div>
       </div>
       <StatusBar

@@ -16,7 +16,7 @@ export function FileTabs({ tabs, names, activeId, onSelect, onClose }: Props) {
     <div
       role="tablist"
       aria-label="Open files"
-      className="flex h-9 shrink-0 items-end overflow-x-auto border-b border-line bg-surface px-2"
+      className="flex h-full min-w-0 flex-1 items-end overflow-x-auto px-2"
     >
       {tabs.map((file) => {
         const active = file.id === activeId;

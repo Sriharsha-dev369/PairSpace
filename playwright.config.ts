@@ -27,6 +27,7 @@ export default defineConfig({
       command: `npm run dev -w web -- --port ${WEB_PORT} --strictPort`,
       env: {
         VITE_SYNC_URL: `ws://localhost:${SERVER_PORT}`,
+        VITE_RUN_TIME_LIMIT_MS: "3000", // endless loops end sooner than the real 10 s
         SERVER_URL: `http://localhost:${SERVER_PORT}`, // where Vite's /api proxy forwards to
       },
       url: `http://localhost:${WEB_PORT}`,
