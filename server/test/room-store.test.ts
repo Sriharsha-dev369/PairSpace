@@ -220,20 +220,14 @@ describe("sharing", () => {
     const code = (await store.shareLink(id, owner, "editor")) ?? "";
     const room = { title: "Test room" };
 
-    expect(await store.access(id, { userId: owner, linkCode: null })).toEqual({
-      ...room,
-      role: "owner",
-    });
-    expect(await store.access(id, { userId: stranger, linkCode: null })).toBe("no-access");
-    expect(await store.access(id, { userId: null, linkCode: code })).toEqual({
-      ...room,
-      role: "editor",
-    });
+    const as = (userId: string | null, linkCode: string | null) =>
+      store.access(id, { userId, linkCode });
+
+    expect(await as(owner, null)).toEqual({ ...room, role: "owner", via: null });
+    expect(await as(stranger, null)).toBe("no-access");
+    expect(await as(null, code)).toEqual({ ...room, role: "editor", via: code }); // what to revoke
     await store.addMember(id, member, "editor", code);
-    expect(await store.access(id, { userId: member, linkCode: null })).toEqual({
-      ...room,
-      role: "editor",
-    });
+    expect(await as(member, null)).toEqual({ ...room, role: "editor", via: code });
     expect(
       await store.access(`room-${crypto.randomUUID()}`, { userId: owner, linkCode: null }),
     ).toBe("no-room");
@@ -253,6 +247,7 @@ describe("sharing", () => {
     expect(await store.access(id, { userId: null, linkCode: null })).toEqual({
       title: "Test room",
       role: "editor",
+      via: null,
     });
   });
 
@@ -271,5 +266,45 @@ describe("sharing", () => {
       ]),
     );
     expect(listed).toHaveLength(2);
+  });
+
+  it("makes view-only links, separate from edit links", async () => {
+    const owner = await newAccount();
+    const id = await newRoom(owner);
+
+    const edit = await store.shareLink(id, owner, "editor");
+    const view = (await store.shareLink(id, owner, "viewer")) ?? "";
+
+    expect(view).not.toBe(edit);
+    expect(await store.access(id, { userId: null, linkCode: view })).toEqual({
+      title: "Test room",
+      role: "viewer",
+      via: view,
+    });
+  });
+
+  it("turns a link off: it stops working, and members it let in lose the room", async () => {
+    const [owner, member] = [await newAccount(), await newAccount()];
+    const id = await newRoom(owner);
+    const code = (await store.shareLink(id, owner, "editor")) ?? "";
+    await store.addMember(id, member, "editor", code);
+
+    expect(await store.revokeLink(id, owner, code)).toBe(true);
+
+    expect(await store.access(id, { userId: null, linkCode: code })).toBe("no-access");
+    expect(await store.access(id, { userId: member, linkCode: null })).toBe("no-access");
+    expect(await store.findLink(code)).toBeNull();
+    expect(await store.listRooms(member)).toEqual([]);
+    expect(await store.shareLink(id, owner, "editor")).not.toBe(code); // a new one from now on
+  });
+
+  it("lets only the owner list links or turn them off", async () => {
+    const [owner, someoneElse] = [await newAccount(), await newAccount()];
+    const id = await newRoom(owner);
+    const code = (await store.shareLink(id, owner, "viewer")) ?? "";
+
+    expect(await store.listLinks(id, someoneElse)).toBeNull();
+    expect(await store.revokeLink(id, someoneElse, code)).toBe(false);
+    expect(await store.listLinks(id, owner)).toEqual([{ code, role: "viewer" }]);
   });
 });

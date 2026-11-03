@@ -169,6 +169,23 @@ describe("room session", () => {
     await expect(without.synced).rejects.toMatchObject({ code: 4403 });
   });
 
+  it("says so when your access is turned off while you're in the room", async () => {
+    await server.close();
+    // a server that lets everyone in through the link "code-1"
+    server = await createSyncServer({
+      port: 0,
+      admit: async () => ({ member: null, role: "editor", via: "code-1" }),
+    });
+    const session = join();
+    await session.synced;
+    const seen: string[] = [];
+    session.subscribe(() => seen.push(session.status()));
+
+    server.revokeAccess("room1", "code-1");
+
+    await waitFor(() => seen.at(-1) === "revoked", "the UI to be told access was turned off");
+  });
+
   it("says so when the room is deleted while you're in it, and stops reconnecting", async () => {
     const session = join();
     await session.synced;

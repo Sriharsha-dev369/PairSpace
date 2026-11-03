@@ -33,12 +33,16 @@ export async function createRoom(context: BrowserContext, title?: string): Promi
   return (await response.json()).id;
 }
 
-// the room's edit link, as its owner gets it from Share: the invite for anyone else
-export async function shareLink(context: BrowserContext, roomId: string): Promise<string> {
+// the room's share link (edit, unless asked for view-only), as its owner gets it from Share
+export async function shareLink(
+  context: BrowserContext,
+  roomId: string,
+  role: "editor" | "viewer" = "editor",
+): Promise<string> {
   const origin = test.info().project.use.baseURL ?? "";
   const response = await context.request.post(`/api/rooms/${roomId}/links`, {
     headers: { origin },
-    data: { role: "editor" },
+    data: { role },
   });
   expect(response.ok(), await response.text()).toBe(true);
   return `/join/${(await response.json()).code}`;

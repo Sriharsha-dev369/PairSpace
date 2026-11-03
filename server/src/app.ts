@@ -43,7 +43,13 @@ export async function startApp({
   api.get("/api/sign-in-methods", (c) => c.json({ github: github !== undefined }));
   api.route(
     "/api/rooms",
-    roomsApi({ auth, store, webOrigin, dropRoom: async (id) => sync?.dropRoom(id) }),
+    roomsApi({
+      auth,
+      store,
+      webOrigin,
+      dropRoom: async (id) => sync?.dropRoom(id),
+      revokeAccess: (id, code) => sync?.revokeAccess(id, code),
+    }),
   );
   api.route("/api/links", linksApi(store));
 
@@ -67,7 +73,7 @@ export async function startApp({
         const link = await store.findLink(linkCode);
         if (link?.roomId === room) await store.addMember(room, member.id, link.role, linkCode);
       }
-      return { member, role: access.role };
+      return { member, role: access.role, via: access.via };
     },
   });
 

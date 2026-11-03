@@ -36,10 +36,11 @@ interface Options {
   store: PostgresRoomStore;
   webOrigin: string;
   dropRoom(id: string): Promise<void>; // disconnect everyone in a deleted room
+  revokeAccess(id: string, code: string): void; // cut off everyone who came in through a link
 }
 
 // the dashboard's API, at /api/rooms: a member's own rooms and the ones shared with them
-export function roomsApi({ auth, store, webOrigin, dropRoom }: Options) {
+export function roomsApi({ auth, store, webOrigin, dropRoom, revokeAccess }: Options) {
   const api = new Hono<{ Variables: Variables }>();
   api.use("*", checkRequest(auth, webOrigin));
 
@@ -60,14 +61,35 @@ export function roomsApi({ auth, store, webOrigin, dropRoom }: Options) {
     return c.json({ id, title: access.title, role: access.role });
   });
 
-  // the room's share link for editors (the same each time), for its owner
+  // the room's share link for a role (the same each time until it's turned off), for its owner
   api.post("/:id/links", async (c) => {
     const me = c.get("memberId");
     if (!me) return c.json(signInFirst, 401);
     const body = await c.req.json().catch(() => ({}));
-    if (body.role !== "editor") return c.json({ error: "role must be editor" }, 400);
-    const code = await store.shareLink(c.req.param("id"), me, "editor");
-    return code ? c.json({ code, role: "editor" }) : c.notFound();
+    const role = body.role;
+    if (role !== "editor" && role !== "viewer") {
+      return c.json({ error: "role must be editor or viewer" }, 400);
+    }
+    const code = await store.shareLink(c.req.param("id"), me, role);
+    return code ? c.json({ code, role }) : c.notFound();
+  });
+
+  api.get("/:id/links", async (c) => {
+    const me = c.get("memberId");
+    if (!me) return c.json(signInFirst, 401);
+    const links = await store.listLinks(c.req.param("id"), me);
+    return links ? c.json(links) : c.notFound();
+  });
+
+  // turning a link off cuts off everyone who came in through it, at once
+  api.delete("/:id/links/:code", async (c) => {
+    const me = c.get("memberId");
+    if (!me) return c.json(signInFirst, 401);
+    const id = c.req.param("id");
+    const code = c.req.param("code");
+    if (!(await store.revokeLink(id, me, code))) return c.notFound();
+    revokeAccess(id, code);
+    return c.body(null, 204);
   });
 
   api.post("/", async (c) => {

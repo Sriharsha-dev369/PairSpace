@@ -6,13 +6,15 @@ import * as Y from "yjs";
 // offline: the browser says there's no network, so we stopped trying until it's back
 // too-large: the server refused one of our changes as over its size limit, so we stopped retrying
 // deleted: the owner deleted the room while we were in it
+// revoked: the owner turned off the link we came in through
 export type ConnectionStatus =
   | "connecting"
   | "connected"
   | "reconnecting"
   | "offline"
   | "too-large"
-  | "deleted";
+  | "deleted"
+  | "revoked";
 
 export interface User {
   id: string; // the same in every tab of one person: a member's user id, or a guest's stored id
@@ -100,9 +102,11 @@ export function joinRoom({
   awareness.on("change", notify);
   let tooLarge = false;
   let deleted = false;
+  let revoked = false;
   provider.on("closed", ({ code }) => {
     tooLarge = code === MESSAGE_TOO_BIG;
     deleted = code === ROOM_DELETED;
+    revoked = code === NO_ACCESS && wasConnected; // before ever getting in, it's a refusal instead
     notify();
   });
 
@@ -166,6 +170,7 @@ export function joinRoom({
     },
     status: () => {
       if (deleted) return "deleted";
+      if (revoked) return "revoked";
       if (tooLarge) return "too-large";
       if (offline) return "offline";
       if (provider.wsconnected) return "connected";

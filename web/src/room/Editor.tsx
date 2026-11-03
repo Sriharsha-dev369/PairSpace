@@ -66,9 +66,10 @@ const theme = EditorView.theme(
 interface Props {
   file: RoomFile;
   awareness: Awareness;
+  readOnly?: boolean; // a viewer: the server drops their changes anyway, so typing is switched off
 }
 
-export function Editor({ file, awareness }: Props) {
+export function Editor({ file, awareness, readOnly = false }: Props) {
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -89,6 +90,7 @@ export function Editor({ file, awareness }: Props) {
           oneDark,
           yCollab(file.content, awareness, { undoManager }),
           cursorLabels(awareness),
+          EditorState.readOnly.of(readOnly),
         ],
       }),
     });
@@ -96,7 +98,7 @@ export function Editor({ file, awareness }: Props) {
       view.destroy();
       undoManager.destroy();
     };
-  }, [file.content, awareness]);
+  }, [file.content, awareness, readOnly]);
 
   return <div ref={host} className="h-full" />;
 }

@@ -168,8 +168,15 @@ function RoomRow({ room, onChanged }: { room: RoomSummary; onChanged: () => void
           <DeleteRoomButton room={room} onDeleted={onChanged} />
         </>
       ) : (
-        <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">
-          Shared with you
+        <span className="flex gap-1.5">
+          {room.role === "viewer" && (
+            <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">
+              View only
+            </span>
+          )}
+          <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">
+            Shared with you
+          </span>
         </span>
       )}
     </li>

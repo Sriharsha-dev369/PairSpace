@@ -89,6 +89,17 @@ function Room({
     return () => window.removeEventListener("beforeunload", askFirst);
   }, [session]);
 
+  if (status === "revoked") {
+    return (
+      <Notice
+        icon={Lock}
+        title="Your access to this room was turned off"
+        body="The room's owner turned off the link you came in with. Ask them for a new one."
+        isMember={isMember}
+      />
+    );
+  }
+
   if (status === "deleted") {
     return (
       <Notice
@@ -106,6 +117,7 @@ function Room({
         roomId={roomId}
         title={info.data?.title}
         canShare={info.data?.role === "owner"}
+        viewOnly={info.data?.role === "viewer"}
         status={status}
         people={people}
         unsyncedEdits={unsyncedEdits}
@@ -113,7 +125,7 @@ function Room({
       />
       <FileTabs fileName={file.name} />
       <main className="min-h-0 flex-1">
-        <Editor file={file} awareness={session.awareness} />
+        <Editor file={file} awareness={session.awareness} readOnly={info.data?.role === "viewer"} />
       </main>
       <StatusBar peopleCount={people.length} />
     </div>

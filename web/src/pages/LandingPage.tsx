@@ -91,7 +91,7 @@ export function LandingPage() {
             </Feature>
             <Feature
               title="Invite with a link"
-              body="Send the link and they're in, no account needed. People who are signed in keep the room on their dashboard."
+              body="Send an edit link, or a view-only one, and they're in with no account needed. Turn a link off and everyone who used it is out."
             >
               <div className="flex max-w-sm gap-2">
                 <span className="flex h-9 min-w-0 flex-1 items-center rounded-lg border border-line bg-raised px-3 font-mono text-xs text-muted">
@@ -151,8 +151,9 @@ export function LandingPage() {
             <Upcoming title="Projects with several files">
               A file tree and tabs, so a room can hold a whole small project.
             </Upcoming>
-            <Upcoming title="View-only links">
-              Share a room for people to watch without editing, and revoke any link at any time.
+            <Upcoming title="Watch the network">
+              A live panel with latency and pending changes, and a switch that makes the network bad
+              on purpose, to watch everyone stay in sync anyway.
             </Upcoming>
           </ul>
         </section>

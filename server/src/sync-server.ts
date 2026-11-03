@@ -12,6 +12,8 @@ export interface SyncServer {
   roomCount(): number;
   // the room was deleted: everyone in it is told (4410) and it's forgotten, unsaved changes too
   dropRoom(name: string): Promise<void>;
+  // a share link was turned off: everyone who came in through it is cut off (4403)
+  revokeAccess(name: string, via: string): void;
   close(): Promise<void>;
 }
 
@@ -31,8 +33,8 @@ export type Role = "owner" | "editor" | "viewer";
 
 // who may enter a room and as what, decided before the room is loaded
 export type Admission =
-  | { member: Member | null; role: Role } // member null: a guest
-  | { refused: "no-room" | "no-access" };
+  // member null: a guest; via: the share link this access depends on, if any
+  { member: Member | null; role: Role; via?: string | null } | { refused: "no-room" | "no-access" };
 
 export interface LoadedRoom {
   state: Uint8Array; // the latest snapshot merged with every change after it
@@ -68,6 +70,7 @@ interface Room {
   conns: Set<WebSocket>;
   presenceOf: Map<WebSocket, Set<number>>; // the awareness client ids each connection owns
   memberOf: Map<WebSocket, Member>; // signed-in connections; the rest are guests
+  grants: Map<WebSocket, { role: Role; via: string | null }>; // what each connection may do
   unsaved: StoredChange[]; // changes waiting for the next write
   saveTimer?: ReturnType<typeof setTimeout>;
   saving: Promise<void>; // the latest write: each waits for the one before, so rows stay in order
@@ -265,6 +268,7 @@ export function createSyncServer({
       conns: new Set(),
       presenceOf: new Map(),
       memberOf: new Map(),
+      grants: new Map(),
       unsaved: [],
       saving: Promise.resolve(),
       sinceSnapshot,
@@ -317,11 +321,12 @@ export function createSyncServer({
     socket: WebSocket,
     name: string,
     room: Room,
-    member: Member | null,
+    { member, role, via = null }: { member: Member | null; role: Role; via?: string | null },
     say: (text: string) => void,
   ) {
-    const { doc, awareness, conns, presenceOf, memberOf } = room;
+    const { doc, awareness, conns, presenceOf, memberOf, grants } = room;
     if (member) memberOf.set(socket, member);
+    grants.set(socket, { role, via });
     clearTimeout(room.unloadTimer);
     room.unloadTimer = undefined;
     conns.add(socket);
@@ -361,6 +366,7 @@ export function createSyncServer({
 
       // a dropped connection never says goodbye, so remove its presence for everyone else
       memberOf.delete(socket);
+      grants.delete(socket);
       const owned = presenceOf.get(socket);
       presenceOf.delete(socket);
       if (owned && owned.size > 0) {
@@ -378,6 +384,13 @@ export function createSyncServer({
         const decoder = decoding.createDecoder(new Uint8Array(data));
         switch (decoding.readVarUint(decoder)) {
           case MESSAGE_SYNC: {
+            // a viewer may ask for the document (step 1), never change it (step 2, update)
+            if (
+              role === "viewer" &&
+              decoding.peekVarUint(decoder) !== syncProtocol.messageYjsSyncStep1
+            ) {
+              break;
+            }
             const reply = encoding.createEncoder();
             encoding.writeVarUint(reply, MESSAGE_SYNC);
             syncProtocol.readSyncMessage(decoder, reply, doc, socket);
@@ -433,7 +446,7 @@ export function createSyncServer({
           socket.close(code, admission.refused === "no-room" ? "room not found" : "no access");
           return;
         }
-        const { member } = admission;
+
         const room = await getRoom(name);
         if (socket.readyState !== WebSocket.OPEN) return; // left while the room was opening
         if (!room || room.dropped) {
@@ -441,7 +454,7 @@ export function createSyncServer({
           socket.close(CLOSE_NO_ROOM, "room not found");
           return;
         }
-        receive = enter(socket, name, room, member, say);
+        receive = enter(socket, name, room, admission, say);
         for (const data of early) receive(data);
       } catch (err) {
         say(`couldn't open "${name}", turning away: ${(err as Error).message}`);
@@ -456,6 +469,11 @@ export function createSyncServer({
       resolve({
         port: address !== null && typeof address === "object" ? address.port : (port ?? 0),
         roomCount: () => rooms.size,
+        revokeAccess: (name, via) => {
+          for (const [conn, grant] of rooms.get(name)?.grants ?? []) {
+            if (grant.via === via) conn.close(CLOSE_NO_ACCESS, "access removed");
+          }
+        },
         dropRoom: async (name) => {
           await opening.get(name)?.catch(() => {}); // a load in progress puts the room in memory
           const room = rooms.get(name);

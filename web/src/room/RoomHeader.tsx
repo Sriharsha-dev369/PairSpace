@@ -12,12 +12,14 @@ const STATUS: Record<ConnectionStatus, { label: string; dot: string }> = {
   offline: { label: "Offline", dot: "bg-red-400" },
   "too-large": { label: "Change too large to sync", dot: "bg-red-400" },
   deleted: { label: "Room deleted", dot: "bg-red-400" },
+  revoked: { label: "Access turned off", dot: "bg-red-400" },
 };
 
 interface Props {
   roomId: string;
   title?: string; // until it loads, the room's id stands in
   canShare: boolean; // only the owner makes share links
+  viewOnly: boolean; // came in with a view link: can watch, not type
   status: ConnectionStatus;
   people: Person[];
   unsyncedEdits: boolean;
@@ -86,6 +88,7 @@ export function RoomHeader({
   roomId,
   title,
   canShare,
+  viewOnly,
   status,
   people,
   unsyncedEdits,
@@ -104,6 +107,11 @@ export function RoomHeader({
       >
         {title ?? roomId}
       </span>
+      {viewOnly && (
+        <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">
+          View only
+        </span>
+      )}
 
       <div className="ml-auto flex items-center gap-2">
         {others.length === 0 && (

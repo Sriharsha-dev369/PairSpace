@@ -391,6 +391,50 @@ describe("sync server", () => {
     });
   });
 
+  // ---------- roles (who may change the document) ----------
+
+  describe("roles", () => {
+    // stands in for the app: the role and the link come from the address (?as=viewer&via=code)
+    beforeEach(async () => {
+      await server.close();
+      server = await createSyncServer({
+        port: 0,
+        admit: async (request) => {
+          const params = new URL(request.url ?? "/", "http://localhost").searchParams;
+          const role = params.get("as") === "viewer" ? "viewer" : "editor";
+          return { member: null, role, via: params.get("via") };
+        },
+      });
+    });
+
+    const isUpdate = (message: Uint8Array) => message[0] === 0 && message[1] === 2; // sync, update
+
+    // the server enforces it: a viewer's own client could send changes anyway
+    it("drops a viewer's changes, and still sends it everyone else's", async () => {
+      const editor = await joinRoom("room1");
+      const viewer = await connectRaw("room1?as=viewer");
+
+      viewer.send(editMessage(5)); // tries to write "xxxxx"
+      editor.doc.getText("probe").insert(0, "from the editor");
+
+      await waitFor(() => viewer.messages.some(isUpdate), "the viewer to get the editor's change");
+      await sleep(SETTLE_MS);
+      expect(text(editor)).toBe("from the editor");
+    });
+
+    it("closes exactly the connections that came through a link when it's turned off", async () => {
+      const throughA = await connectRaw("room1?via=code-a");
+      const throughB = await connectRaw("room1?via=code-b");
+      const owner = await connectRaw("room1");
+
+      server.revokeAccess("room1", "code-a");
+
+      expect((await throughA.closed()).code).toBe(4403);
+      owner.send(presenceMessage("Owner"));
+      await waitFor(() => throughB.messages.length > 1, "the others to stay connected");
+    });
+  });
+
   // ---------- heartbeats (noticing dead connections, and keeping live ones alive) ----------
 
   describe("heartbeats", () => {

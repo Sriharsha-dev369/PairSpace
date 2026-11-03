@@ -20,7 +20,8 @@ export interface RoomSummary {
   lastEditedAt: Date;
 }
 
-export type Access = { title: string; role: Role } | "no-room" | "no-access";
+// via: the share link this access depends on (turning it off ends the access); null if none
+export type Access = { title: string; role: Role; via: string | null } | "no-room" | "no-access";
 
 export interface PostgresRoomStore extends RoomStore {
   // `state`: the room's first content, saved as its first change
@@ -38,6 +39,10 @@ export interface PostgresRoomStore extends RoomStore {
   // who may enter: the owner, a member, a holder of an active link for this room
   access(id: string, who: { userId: string | null; linkCode: string | null }): Promise<Access>;
   addMember(id: string, userId: string, role: LinkRole, linkCode: string | null): Promise<void>;
+  // the room's active links; null if it isn't the owner's room
+  listLinks(id: string, ownerId: string): Promise<{ code: string; role: LinkRole }[] | null>;
+  // turns a link off, and removes the members it let in; false if it isn't the owner's room
+  revokeLink(id: string, ownerId: string, code: string): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -175,26 +180,57 @@ export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
         .where(eq(rooms.id, id));
       if (!room) return "no-room";
       const { title } = room;
-      if (room.ownerId === null) return { title, role: "editor" }; // from before owners: open
-      if (userId !== null && room.ownerId === userId) return { title, role: "owner" };
-      const roles: LinkRole[] = [];
+      if (room.ownerId === null) return { title, role: "editor", via: null }; // before owners: open
+      if (userId !== null && room.ownerId === userId) return { title, role: "owner", via: null };
+      const grants: { role: LinkRole; via: string | null }[] = [];
       if (userId !== null) {
         const [member] = await db
-          .select({ role: roomMembers.role })
+          .select({ role: roomMembers.role, via: roomMembers.linkCode })
           .from(roomMembers)
           .where(and(eq(roomMembers.roomId, id), eq(roomMembers.userId, userId)));
-        if (member) roles.push(member.role);
+        if (member) grants.push(member);
       }
       if (linkCode !== null) {
         const [link] = await db
           .select({ role: roomLinks.role })
           .from(roomLinks)
           .where(activeLink(linkCode, id));
-        if (link) roles.push(link.role);
+        if (link) grants.push({ role: link.role, via: linkCode });
       }
-      if (roles.includes("editor")) return { title, role: "editor" };
-      if (roles.includes("viewer")) return { title, role: "viewer" };
-      return "no-access";
+      // the strongest grant wins: editing over viewing
+      const best = grants.find((g) => g.role === "editor") ?? grants[0];
+      return best ? { title, ...best } : "no-access";
+    },
+
+    async listLinks(id, ownerId) {
+      const [room] = await db
+        .select({ id: rooms.id })
+        .from(rooms)
+        .where(and(eq(rooms.id, id), eq(rooms.ownerId, ownerId)));
+      if (!room) return null;
+      return db
+        .select({ code: roomLinks.code, role: roomLinks.role })
+        .from(roomLinks)
+        .where(and(eq(roomLinks.roomId, id), isNull(roomLinks.revokedAt)))
+        .orderBy(asc(roomLinks.createdAt));
+    },
+
+    async revokeLink(id, ownerId, code) {
+      return db.transaction(async (tx) => {
+        const [room] = await tx
+          .select({ id: rooms.id })
+          .from(rooms)
+          .where(and(eq(rooms.id, id), eq(rooms.ownerId, ownerId)));
+        if (!room) return false;
+        await tx
+          .update(roomLinks)
+          .set({ revokedAt: sql`now()` })
+          .where(and(eq(roomLinks.code, code), eq(roomLinks.roomId, id)));
+        await tx
+          .delete(roomMembers)
+          .where(and(eq(roomMembers.roomId, id), eq(roomMembers.linkCode, code)));
+        return true;
+      });
     },
 
     async addMember(id, userId, role, linkCode) {
