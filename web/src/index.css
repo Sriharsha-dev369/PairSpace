@@ -15,7 +15,7 @@
   --color-line: rgb(255 255 255 / 0.07);
   --color-fg: #e6e8ee;
   --color-muted: #8b91a1;
-  --color-faint: #565b69;
+  --color-faint: #7f8494; /* the dimmest text that still reads: 4.5:1 on raised, AA */
   --color-accent: #8b8cff;
 }
 

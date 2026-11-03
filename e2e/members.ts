@@ -83,6 +83,10 @@ export async function twoGuestsIn(browser: Browser): Promise<[Page, Page]> {
 
 export const fileList = (page: Page) => page.getByRole("complementary", { name: "Files" });
 
+// an open file's button in the tab bar (aria-current="true" when it's the one shown)
+export const openTab = (page: Page, name: string | RegExp) =>
+  page.getByRole("list", { name: "Open files" }).getByRole("button", { name, exact: true });
+
 // a new file in the room, named in the file list; it opens, ready to type in
 export async function newFile(page: Page, name: string) {
   await fileList(page).getByRole("button", { name: "New file" }).click();

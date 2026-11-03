@@ -10,6 +10,7 @@ import {
   newFile,
   newRoomUrl,
   openRoomAs,
+  openTab,
   shareLink,
   twoGuestsIn,
 } from "./members";
@@ -41,7 +42,7 @@ test("a new file reaches everyone, and two people work in different files at onc
   const aliceName = await alice.getByTestId("my-name").innerText();
 
   await newFile(alice, "utils.js");
-  await expect(alice.getByRole("tab", { name: "utils.js", selected: true })).toBeVisible();
+  await expect(openTab(alice, "utils.js")).toHaveAttribute("aria-current", "true");
   await expect(alice.locator(".cm-line")).toHaveCount(1); // empty: the Enter that named it isn't in it
   await alice.keyboard.type("export const answer = 42;"); // a new file is ready to type in
   await editor(bob).click();
@@ -67,7 +68,7 @@ test("renaming a file renames it for everyone, and its language follows the new 
   await alice.getByLabel("File name").fill("main.py");
   await alice.getByLabel("File name").press("Enter");
 
-  await expect(bob.getByRole("tab", { name: "main.py" })).toBeVisible();
+  await expect(openTab(bob, "main.py")).toBeVisible();
   await expect(fileList(bob).getByRole("button", { name: "main.py", exact: true })).toBeVisible();
   await expect(bob.getByTestId("language")).toHaveText("Python");
   await expect(editor(bob)).toHaveAttribute("data-language", "python"); // highlighted as Python
@@ -142,7 +143,7 @@ test("a deleted file waits in the trash: Undo brings it back, and so can anyone 
   await newFile(alice, "utils.js");
 
   await fileList(alice).getByRole("button", { name: "Delete utils.js" }).click();
-  await expect(alice.getByRole("tab", { name: "utils.js" })).toHaveCount(0); // its tab closes
+  await expect(openTab(alice, "utils.js")).toHaveCount(0); // its tab closes
   await expect(fileList(bob).getByRole("button", { name: "utils.js", exact: true })).toHaveCount(0);
   await alice.getByRole("button", { name: "Undo" }).click();
   await expect(fileList(bob).getByRole("button", { name: "utils.js", exact: true })).toBeVisible();
@@ -234,7 +235,7 @@ test("files with folders in their names are grouped in the list, and a folder fo
   const folder = fileList(page).getByRole("button", { name: "src", exact: true });
   await expect(folder).toHaveAttribute("aria-expanded", "true");
   await expect(app).toBeVisible();
-  await expect(page.getByRole("tab", { name: "app.js", exact: true })).toBeVisible();
+  await expect(openTab(page, "app.js")).toBeVisible();
   await folder.click();
   await expect(app).toHaveCount(0);
 });

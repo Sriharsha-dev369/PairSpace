@@ -74,7 +74,7 @@ function MyChip({
     <PersonChip {...me} testId="my-name">
       <span className="text-faint">you</span>
       {!isMember && (
-        <span className="rounded-full bg-line px-1.5 text-[10px] font-medium text-muted">
+        <span className="rounded-full bg-line px-1.5 text-[10px] font-medium text-fg/80">
           guest
         </span>
       )}

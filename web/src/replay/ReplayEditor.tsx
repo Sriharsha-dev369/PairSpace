@@ -3,7 +3,7 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { Decoration, EditorView } from "@codemirror/view";
 import { basicSetup } from "codemirror";
 import { useEffect, useRef, useState } from "react";
-import { editorTheme, language, useFileLanguage } from "../room/editorSetup";
+import { editorTheme, label, language, useFileName } from "../room/editorSetup";
 import type { Author } from "./authors";
 
 export type Run = { text: string; author: Author | null };
@@ -43,6 +43,7 @@ export function ReplayEditor({ name, runs }: { name: string; runs: Run[] }) {
         extensions: [
           basicSetup,
           language.of([]),
+          label.of([]),
           credits.of([]),
           editorTheme,
           oneDark,
@@ -63,7 +64,7 @@ export function ReplayEditor({ name, runs }: { name: string; runs: Run[] }) {
       effects: credits.reconfigure(creditsFor(runs)),
     });
   }, [view, runs]);
-  useFileLanguage(view, name);
+  useFileName(view, name);
 
   return <div ref={host} data-testid="replay-code" className="h-full" />;
 }

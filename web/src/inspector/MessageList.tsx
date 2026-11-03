@@ -57,7 +57,7 @@ export function MessageList({ sync }: { sync: SessionSync }) {
           Sent {sent.count} ({size(sent.bytes)}), received {received.count} ({size(received.bytes)})
         </p>
       </div>
-      <ol aria-labelledby={heading} className="mt-2 max-h-72 overflow-y-auto pb-2">
+      <ol aria-labelledby={heading} className="mt-2 pb-2">
         {[...recent].reverse().map((message) => {
           const kind = KINDS[message.kind];
           return (

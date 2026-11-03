@@ -67,13 +67,13 @@ export function RoundTripButton({
   return (
     <button
       type="button"
-      aria-label="Sync inspector"
       aria-expanded={open}
       title="Round trip to the server. Open the sync inspector"
       onClick={onToggle}
       className={`flex h-5 items-center gap-1 rounded px-1.5 tabular-nums transition hover:bg-raised hover:text-fg ${open ? "bg-raised text-fg" : ""}`}
     >
-      <Activity size={12} />
+      <Activity size={12} aria-hidden="true" />
+      <span className="sr-only">Sync inspector, round trip</span>
       {latest ? duration(latest.ms) : "…"}
       {network !== "normal" && (
         <span className="rounded bg-amber-400/15 px-1 font-medium text-amber-300">

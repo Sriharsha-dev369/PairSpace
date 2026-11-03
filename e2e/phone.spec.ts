@@ -2,7 +2,15 @@
 // sideways. Invite links are often opened from a chat on a phone.
 
 import { expect, type Page, test } from "@playwright/test";
-import { createRoom, fileList, memberBrowser, newFile, openRoomAs, shareLink } from "./members";
+import {
+  createRoom,
+  fileList,
+  memberBrowser,
+  newFile,
+  openRoomAs,
+  openTab,
+  shareLink,
+} from "./members";
 
 const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
 
@@ -48,7 +56,7 @@ test("on a phone, the file list slides in over the editor, and opening a file cl
   await newFile(page, "b.js");
 
   await expect(fileList(page)).toBeHidden();
-  await expect(page.getByRole("tab", { name: /b\.js/ })).toHaveAttribute("aria-selected", "true");
+  await expect(openTab(page, "b.js")).toHaveAttribute("aria-current", "true");
   const editor = await page.locator(".cm-editor").boundingBox();
   expect(editor?.width).toBeGreaterThan(350);
 });
@@ -67,7 +75,7 @@ test("on a phone, an invited guest joins and types, and the others see it", asyn
 test("on a phone, the sync inspector opens as a sheet", async ({ browser }) => {
   const { page } = await ownerOnPhone(browser);
 
-  await page.getByRole("button", { name: "Sync inspector", exact: true }).click();
+  await page.getByRole("button", { name: /^Sync inspector/ }).click();
 
   const sheet = page.getByRole("dialog", { name: "Sync inspector" });
   await expect(sheet.getByTestId("sync-connection")).toHaveText("Connected");

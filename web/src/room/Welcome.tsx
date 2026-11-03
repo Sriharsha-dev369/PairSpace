@@ -95,7 +95,7 @@ export function Welcome({ session, title, owner, viewOnly, onJoin }: Props) {
         </form>
         <p className="mt-5 text-center text-xs text-faint">
           Have an account?{" "}
-          <Link to={signIn} className="text-muted underline-offset-2 hover:text-fg hover:underline">
+          <Link to={signIn} className="text-muted underline underline-offset-2 hover:text-fg">
             Sign in
           </Link>
         </p>

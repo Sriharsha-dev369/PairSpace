@@ -6,7 +6,7 @@ import { newRoomUrl, openRoomAs, twoGuestsIn } from "./members";
 const inspector = (page: Page) => page.getByRole("complementary", { name: "Sync inspector" });
 
 async function openInspector(page: Page) {
-  await page.getByRole("button", { name: "Sync inspector", exact: true }).click();
+  await page.getByRole("button", { name: /^Sync inspector/ }).click();
   await expect(inspector(page)).toBeVisible();
 }
 
@@ -15,9 +15,7 @@ test("the sync inspector shows the connection, its round trip and that every cha
 }) => {
   const page = await openRoomAs(browser, await newRoomUrl(browser));
   // the status bar shows the round trip, and opens the inspector
-  await expect(page.getByRole("button", { name: "Sync inspector", exact: true })).toHaveText(
-    /(<1|\d+) ms/,
-  );
+  await expect(page.getByRole("button", { name: /^Sync inspector/ })).toHaveText(/(<1|\d+) ms/);
 
   await openInspector(page);
   await page.locator(".cm-content").click();
@@ -56,9 +54,7 @@ test("on a slow network, changes wait for the server and reach the others late, 
 
   await networkChoice(bob, "Slow").check();
   await expect(alice.getByTestId("network-tag")).toHaveText("simulated slow network");
-  await expect(bob.getByRole("button", { name: "Sync inspector", exact: true })).toContainText(
-    "Slow",
-  );
+  await expect(bob.getByRole("button", { name: /^Sync inspector/ })).toContainText("Slow");
 
   await bob.locator(".cm-content").click();
   await bob.keyboard.type("from bob");

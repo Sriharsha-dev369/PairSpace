@@ -41,13 +41,20 @@ export const editorTheme = EditorView.theme(
   { dark: true },
 );
 
-// the file's language, swapped in place when the name changes (main.js to main.py)
+// what a file's name decides, swapped in place when it changes (main.js to main.py): its language,
+// and what screen readers call the editor
 export const language = new Compartment();
+export const label = new Compartment();
+
+// a named, keyboard-reachable code area: even a read-only one must take focus, to scroll
+const labelFor = (name: string) =>
+  EditorView.contentAttributes.of({ "aria-label": `Code in ${name}`, tabindex: "0" });
 
 // loads the language a file's name says (each language's code only when a file needs it)
-export function useFileLanguage(view: EditorView | null, name: string) {
+export function useFileName(view: EditorView | null, name: string) {
   useEffect(() => {
     if (!view) return;
+    view.dispatch({ effects: label.reconfigure(labelFor(name)) });
     let current = true;
     const use = (support: Extension) =>
       current && view.dispatch({ effects: language.reconfigure(support) });

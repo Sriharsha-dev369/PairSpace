@@ -10,11 +10,11 @@ interface Props {
   onClose: (id: string) => void;
 }
 
-// the files this person has open, and which one they're looking at
+// the files this person has open, and which one they're looking at. A list of buttons, not
+// ARIA tabs: each has a Close button beside it, and a tab list may hold only tabs
 export function FileTabs({ tabs, names, activeId, onSelect, onClose }: Props) {
   return (
-    <div
-      role="tablist"
+    <ul
       aria-label="Open files"
       className="flex h-full min-w-0 flex-1 items-end overflow-x-auto px-2"
     >
@@ -22,15 +22,14 @@ export function FileTabs({ tabs, names, activeId, onSelect, onClose }: Props) {
         const active = file.id === activeId;
         const shown = names.get(file.id) ?? file.name;
         return (
-          <div
+          <li
             key={file.id}
             className={`relative flex h-full shrink-0 items-center border-x text-xs ${active ? "border-line bg-canvas text-fg" : "border-transparent text-muted hover:text-fg"}`}
           >
             {active && <span className="absolute inset-x-0 top-0 h-px bg-accent" />}
             <button
               type="button"
-              role="tab"
-              aria-selected={active}
+              aria-current={active ? "true" : undefined}
               onClick={() => onSelect(file.id)}
               title={file.name}
               className="flex h-full items-center gap-2 pr-1.5 pl-3 focus-visible:outline-none"
@@ -49,9 +48,9 @@ export function FileTabs({ tabs, names, activeId, onSelect, onClose }: Props) {
             >
               <X size={12} />
             </button>
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ul>
   );
 }

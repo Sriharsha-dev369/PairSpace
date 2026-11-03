@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
-import { editorTheme, language, useFileLanguage } from "./editorSetup";
+import { editorTheme, label, language, useFileName } from "./editorSetup";
 import type { RoomFile } from "./files";
 import { syncSizeLimit } from "./syncSizeLimit";
 
@@ -46,6 +46,7 @@ export function Editor({ file, awareness, readOnly = false, autoFocus = false }:
           keymap.of(yUndoManagerKeymap), // before basicSetup so it wins over its own history
           basicSetup,
           language.of([]),
+          label.of([]),
           placeholder("Start typing. Everyone you share this room with sees it live."),
           refuseTooLarge,
           editorTheme, // before oneDark: earlier extensions take precedence
@@ -66,7 +67,7 @@ export function Editor({ file, awareness, readOnly = false, autoFocus = false }:
     };
   }, [file.content, awareness, readOnly, autoFocus]);
 
-  useFileLanguage(view, file.name);
+  useFileName(view, file.name);
 
   return <div ref={host} className="h-full" />;
 }
