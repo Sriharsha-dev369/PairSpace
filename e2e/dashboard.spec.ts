@@ -75,6 +75,7 @@ test("leaving a room while edits haven't synced asks first", async ({ browser })
   const page = await context.newPage();
   await page.goto(`/r/${await createRoom(context)}`);
   await expect(page.locator(".cm-content")).toBeVisible();
+  await page.waitForLoadState("networkidle"); // the pages you may go to next have downloaded too
   await context.setOffline(true);
   await expect(page.getByTestId("connection-status")).toHaveText("Offline");
   await page.locator(".cm-content").click();

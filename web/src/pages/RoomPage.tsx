@@ -14,6 +14,8 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { FullScreen } from "../ui/FullScreen";
 import { LogoMark } from "../ui/Logo";
 import { Notice } from "../ui/Notice";
+import { usePageTitle } from "../ui/usePageTitle";
+import { warm } from "./load";
 
 export function RoomPage() {
   const { roomId = "" } = useParams();
@@ -78,6 +80,8 @@ function Room({
       ),
   });
   const viewOnly = info.data?.role === "viewer";
+  usePageTitle(info.data?.title ?? "Room");
+  useEffect(() => warm("home", "dashboard", "replay"), []);
 
   // edits that haven't synced exist only in this tab, so closing it would lose them
   useEffect(() => {

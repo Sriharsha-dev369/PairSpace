@@ -5,6 +5,8 @@ import { authClient } from "../auth/client";
 import { safeNext } from "../auth/next";
 import { CursorFlag } from "../ui/CursorFlag";
 import { Logo } from "../ui/Logo";
+import { usePageTitle } from "../ui/usePageTitle";
+import { warm } from "./load";
 
 type Mode = "sign-in" | "sign-up";
 
@@ -132,6 +134,8 @@ function ProductPanel() {
 }
 
 export function AuthPage({ mode }: { mode: Mode }) {
+  usePageTitle(mode === "sign-in" ? "Sign in" : "Create your account");
+  useEffect(() => warm("home", "dashboard"), []);
   const [params] = useSearchParams();
   const next = safeNext(params.get("next"));
   const navigate = useNavigate();

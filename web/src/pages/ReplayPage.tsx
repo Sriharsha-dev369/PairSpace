@@ -20,6 +20,7 @@ import { Loading } from "../ui/FullScreen";
 import { LogoMark } from "../ui/Logo";
 import { Notice } from "../ui/Notice";
 import { PersonChip } from "../ui/PersonChip";
+import { usePageTitle } from "../ui/usePageTitle";
 
 const when = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "medium" });
 
@@ -40,6 +41,7 @@ export function ReplayPage() {
     queryFn: () => api<{ title: string }>("GET", `/api/rooms/${roomId}${query}`),
   });
   const timeline = useMemo(() => history.data && createTimeline(history.data), [history.data]);
+  usePageTitle(`Replay of ${info.data?.title ?? "a room"}`);
   const room = `/r/${roomId}${query}`;
 
   if (history.isError) {

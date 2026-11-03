@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- The link-preview card (1200×630): drawn in the app's own fonts, colours and editor theme
+     (oneDark), and rendered to web/public/og.png by og-image.ts -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      @font-face { font-family: Inter; src: url("../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2"); font-weight: 100 900; }
+      @font-face { font-family: Bricolage; src: url("../node_modules/@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2"); font-weight: 200 800; }
+      @font-face { font-family: JetBrains; src: url("../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2"); font-weight: 100 800; }
+      * { box-sizing: border-box; margin: 0; }
+      body {
+        width: 1200px; height: 630px; overflow: hidden; position: relative;
+        font-family: Inter, sans-serif; color: #e6e8ee;
+        background: radial-gradient(ellipse 80% 60% at 20% -10%, rgb(139 140 255 / 0.16), transparent), #0b0c10;
+      }
+      .brand { position: absolute; left: 72px; top: 64px; display: flex; align-items: center; gap: 14px; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+      h1 { position: absolute; left: 72px; top: 150px; width: 520px; font-family: Bricolage, Inter, sans-serif; font-size: 76px; line-height: 0.98; font-weight: 650; letter-spacing: -0.035em; }
+      .sub { position: absolute; left: 72px; top: 420px; width: 470px; font-size: 25px; line-height: 1.45; color: #8b91a1; }
+      .editor { position: absolute; left: 620px; top: 96px; width: 508px; height: 438px; border: 1px solid rgb(255 255 255 / 0.08); border-radius: 18px; background: #111318; box-shadow: 0 40px 80px rgb(0 0 0 / 0.5); overflow: hidden; }
+      .bar { height: 54px; display: flex; align-items: center; gap: 10px; padding: 0 20px; border-bottom: 1px solid rgb(255 255 255 / 0.07); font-size: 16px; color: #8b91a1; }
+      .badge { font: 700 11px Inter, sans-serif; color: #111318; background: #facc15; border-radius: 4px; padding: 2px 5px; }
+      .chips { margin-left: auto; display: flex; gap: 8px; }
+      .chip { display: flex; align-items: center; gap: 7px; border: 1px solid rgb(255 255 255 / 0.07); background: #191c23; border-radius: 99px; padding: 3px 12px 3px 3px; font-size: 14px; color: #e6e8ee; font-weight: 500; }
+      .chip i { width: 22px; height: 22px; border-radius: 99px; display: grid; place-items: center; font: 700 11px Inter, sans-serif; font-style: normal; color: #0b0c10; }
+      pre { padding: 30px 0 0 0; font: 21px/38px JetBrains, monospace; color: #abb2bf; }
+      .line { display: flex; }
+      .n { width: 62px; text-align: right; padding-right: 22px; color: #4b5263; }
+      .k { color: #c678dd; } .f { color: #61afef; } .s { color: #98c379; } .v { color: #e06c75; } .o { color: #56b6c2; } .c { color: #7d8799; }
+      .cursor { position: relative; display: inline-block; width: 0; height: 30px; vertical-align: -6px; }
+      .cursor::before { content: ""; position: absolute; left: -1px; top: 0; width: 2.5px; height: 30px; background: var(--who); }
+      .cursor b { position: absolute; left: -1px; bottom: 29px; white-space: nowrap; font: 600 13px/1 Inter, sans-serif; color: #0b0c10; background: var(--who); padding: 4px 6px; border-radius: 4px 4px 4px 0; }
+    </style>
+  </head>
+  <body>
+    <div class="brand">
+      <svg width="40" height="40" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a5a6ff"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#m)"/><rect x="10" y="8" width="3" height="16" rx="1.5" fill="#0b0c10"/><rect x="19" y="8" width="3" height="16" rx="1.5" fill="#0b0c10" opacity="0.55"/></svg>
+      PairSpace
+    </div>
+    <h1>Share a link. Code together, live.</h1>
+    <p class="sub">A code editor in your browser that several people use at once.</p>
+    <div class="editor">
+      <div class="bar">
+        <span class="badge">JS</span> main.js
+        <span class="chips">
+          <span class="chip"><i style="background: #34d399">G</i>Grace</span>
+          <span class="chip"><i style="background: #f472b6">A</i>Ada</span>
+        </span>
+      </div>
+      <pre><div class="line"><span class="n">1</span><span class="c">// two people, one file, live</span></div><div class="line"><span class="n">2</span><span class="k">function</span>&nbsp;<span class="f">greet</span>(<span class="v">name</span>) {</div><div class="line"><span class="n">3</span>&nbsp;&nbsp;<span class="k">return</span>&nbsp;<span class="s">`Hello, </span><span class="o">${</span><span class="v">name</span><span class="o">}</span><span class="s">!`</span>;<span class="cursor" style="--who: #34d399"><b>Grace</b></span></div><div class="line"><span class="n">4</span>}</div><div class="line"><span class="n">5</span>&nbsp;</div><div class="line"><span class="n">6</span><span class="v">console</span>.<span class="f">log</span>(<span class="f">greet</span>(<span class="s">"Ad</span><span class="cursor" style="--who: #f472b6"><b>Ada</b></span></div></pre>
+    </div>
+  </body>
+</html>

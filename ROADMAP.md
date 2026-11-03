@@ -26,7 +26,7 @@ M0 Relay ✅ ─► M1 Co-editing ─► M2 Reliability ─► M3 Persistence + 
 | M7 | In-browser Run (JS + Python) | M | ✅ done 2026-11-03 (JavaScript and Python in a sandbox, output shared and kept, one run at a time, anyone can stop, imports between files) |
 | M8 | Session replay | M | ✅ done 2026-11-03 (step through or play the room's history, files and code exactly as they were, colour per person; for people who can edit) |
 | M9 | Sync inspector and bad-network toggle | M | ✅ done 2026-11-03 (round trip, changes waiting and last confirmed from numbered pings; slow, very slow, flaky and offline for this browser, shown on its chip; message log and round-trip graph) |
-| M10 | Landing page and polish | M | started: home page and sign-in redesign done early (2026-11-01); polish pass left |
+| M10 | Landing page and polish | M | in progress: home page and sign-in (2026-11-01); 10.1 pages on demand, crash/not-found pages, titles, link previews (2026-11-04) |
 | M11 | Hardening and deploy | M | |
 
 ## Milestones

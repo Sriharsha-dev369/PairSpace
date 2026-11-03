@@ -12,6 +12,7 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "knip": "knip",
+    "og-image": "node scripts/og-image.ts",
     "test:e2e": "playwright test",
     "build": "npm run build --workspaces --if-present",
     "db:up": "docker compose up -d --wait",

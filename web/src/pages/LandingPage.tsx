@@ -1,9 +1,10 @@
 import { Link2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { lazy, type ReactNode, Suspense, useEffect } from "react";
 import { Link } from "react-router";
-import { LiveDemo } from "../landing/LiveDemo";
 import { CursorFlag } from "../ui/CursorFlag";
 import { Logo } from "../ui/Logo";
+import { usePageTitle } from "../ui/usePageTitle";
+import { warm } from "./load";
 
 const SOURCE_URL = "https://github.com/Sriharsha-dev369/PairSpace";
 
@@ -15,7 +16,17 @@ const NAV_LINK =
   "rounded-md px-2.5 py-1.5 text-sm text-muted transition hover:text-fg focus-visible:outline-2 focus-visible:outline-accent";
 
 // the public face of PairSpace: what it is, the product working, and the ways in
+// the demo is the real editor, the page's largest download: the words above it don't wait for it
+const LiveDemo = lazy(async () => ({ default: (await import("../landing/LiveDemo")).LiveDemo }));
+
+// where the demo will be, the same size, so nothing below it jumps when it arrives
+function DemoFrame() {
+  return <div className="h-[350px] rounded-2xl border border-line bg-canvas" />;
+}
+
 export function LandingPage() {
+  usePageTitle(null);
+  useEffect(() => warm("auth"), []);
   return (
     <div className="min-h-screen bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgb(139_140_255/0.10),transparent)]">
       <header className="sticky top-0 z-10 border-b border-line bg-canvas/80 backdrop-blur">
@@ -58,7 +69,9 @@ export function LandingPage() {
             <span className="text-sm text-faint">People you invite don't need an account.</span>
           </div>
           <div className="mt-16">
-            <LiveDemo />
+            <Suspense fallback={<DemoFrame />}>
+              <LiveDemo />
+            </Suspense>
           </div>
         </section>
 

@@ -1,16 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileCode2, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
-import { type ComponentProps, useState } from "react";
+import { type ComponentProps, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { api, type Role } from "../api";
 import { SignOutButton } from "../auth/SignOutButton";
 import type { Member } from "../auth/useMember";
+import { warm } from "../pages/load";
 import { timeAgo } from "../timeAgo";
 import { Badge } from "../ui/Badge";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Logo } from "../ui/Logo";
 import { NameField } from "../ui/NameField";
+import { usePageTitle } from "../ui/usePageTitle";
 
 interface RoomSummary {
   id: string;
@@ -51,6 +53,8 @@ function NewRoomButton({ onClick, busy }: { onClick: () => void; busy: boolean }
 
 // a member's own rooms: open, create, rename, delete
 export function Dashboard({ member }: { member: Member }) {
+  usePageTitle("Your rooms");
+  useEffect(() => warm("room"), []);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const roomsKey = ["rooms", member.id];
