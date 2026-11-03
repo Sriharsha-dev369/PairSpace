@@ -1,15 +1,18 @@
-import { javascript } from "@codemirror/lang-javascript";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { basicSetup } from "codemirror";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
-import type { RoomFile } from "./session";
+import type { RoomFile } from "./files";
+import { languageOf } from "./language";
 import { syncSizeLimit } from "./syncSizeLimit";
+
+// the file's language: swapped in place when the file is renamed (main.js to main.py)
+const language = new Compartment();
 
 // half the server's 2 MiB message limit: on reconnect, all offline edits travel in one message
 const MAX_CHANGE_BYTES = 1024 * 1024;
@@ -63,23 +66,25 @@ interface Props {
   file: RoomFile;
   awareness: Awareness;
   readOnly?: boolean; // a viewer: the server drops their changes anyway, so typing is switched off
+  autoFocus?: boolean; // ready to type in as soon as it opens
 }
 
-export function Editor({ file, awareness, readOnly = false }: Props) {
+export function Editor({ file, awareness, readOnly = false, autoFocus = false }: Props) {
   const host = useRef<HTMLDivElement>(null);
+  const [view, setView] = useState<EditorView | null>(null);
 
   useEffect(() => {
     if (!host.current) return;
     // per-person undo: only undoes your own edits, never someone else's
     const undoManager = new Y.UndoManager(file.content);
-    const view = new EditorView({
+    const created = new EditorView({
       parent: host.current,
       state: EditorState.create({
         doc: file.content.toString(),
         extensions: [
           keymap.of(yUndoManagerKeymap), // before basicSetup so it wins over its own history
           basicSetup,
-          javascript(),
+          language.of([]),
           placeholder("Start typing. Everyone you share this room with sees it live."),
           refuseTooLarge,
           theme, // before oneDark: earlier extensions take precedence
@@ -89,11 +94,29 @@ export function Editor({ file, awareness, readOnly = false }: Props) {
         ],
       }),
     });
+    setView(created);
+    if (autoFocus) created.focus();
     return () => {
-      view.destroy();
+      created.destroy();
       undoManager.destroy();
+      setView(null);
+      // the Yjs binding leaves my cursor where it was: everyone would still see it in this file
+      awareness.setLocalStateField("cursor", null);
     };
-  }, [file.content, awareness, readOnly]);
+  }, [file.content, awareness, readOnly, autoFocus]);
+
+  useEffect(() => {
+    if (!view) return;
+    let current = true;
+    const use = (support: Extension) =>
+      current && view.dispatch({ effects: language.reconfigure(support) });
+    const description = languageOf(file.name);
+    if (description) description.load().then(use);
+    else use([]);
+    return () => {
+      current = false;
+    };
+  }, [view, file.name]);
 
   return <div ref={host} className="h-full" />;
 }

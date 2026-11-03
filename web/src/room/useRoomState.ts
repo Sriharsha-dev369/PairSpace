@@ -1,19 +1,22 @@
 import { useEffect, useState } from "react";
+import type { RoomFile } from "./files";
 import type { ConnectionStatus, Person, RoomSession } from "./session";
 
 interface RoomState {
   status: ConnectionStatus;
   people: Person[];
   unsyncedEdits: boolean;
+  files: RoomFile[];
 }
 
 const read = (session: RoomSession): RoomState => ({
   status: session.status(),
   people: session.people(),
   unsyncedEdits: session.unsyncedEdits(),
+  files: session.files(),
 });
 
-// re-renders whenever the session reports a change in connection or presence
+// re-renders whenever the session reports a change in connection, presence or files
 export function useRoomState(session: RoomSession): RoomState {
   const [state, setState] = useState(() => read(session));
 

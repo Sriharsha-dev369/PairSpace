@@ -1,6 +1,7 @@
 import type { Awareness } from "y-protocols/awareness";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
+import { listFiles, type RoomFile } from "./files";
 
 // reconnecting: we were connected and the provider is retrying on its own
 // offline: the browser says there's no network, so we stopped trying until it's back
@@ -31,12 +32,7 @@ export const presence = <T extends { color: string }>(person: T) => ({
 
 export interface Person extends User {
   isMe: boolean;
-}
-
-export interface RoomFile {
-  id: string;
-  name: string;
-  content: Y.Text;
+  fileId: string | null; // the file they have open
 }
 
 export interface RoomSession {
@@ -47,7 +43,8 @@ export interface RoomSession {
   unsyncedEdits(): boolean; // edits made while disconnected that haven't been sent yet
   subscribe(listener: () => void): () => void; // called when status, people or files may have changed
   people(): Person[];
-  files(): RoomFile[];
+  files(): RoomFile[]; // by name
+  setOpenFile(id: string | null): void; // shows everyone which file I'm in
   leave(): void;
 }
 
@@ -106,6 +103,10 @@ export function joinRoom({
     notify();
   });
   awareness.on("change", notify);
+  // a file added, removed or renamed; not the text inside one, which changes on every keystroke
+  doc.getMap("files").observeDeep((events) => {
+    if (events.some((event) => !(event.target instanceof Y.Text))) notify();
+  });
   let tooLarge = false;
   let deleted = false;
   let revoked = false;
@@ -170,7 +171,8 @@ export function joinRoom({
         const id = typeof state.user.id === "string" ? state.user.id : `tab-${clientId}`;
         if (byPerson.has(id)) continue;
         const { name, color } = state.user;
-        byPerson.set(id, { id, name, color, isMe: id === user.id });
+        const fileId = typeof state.file === "string" ? state.file : null;
+        byPerson.set(id, { id, name, color, isMe: id === user.id, fileId });
       }
       return [...byPerson.values()];
     },
@@ -184,12 +186,8 @@ export function joinRoom({
       return wasConnected ? "reconnecting" : "connecting";
     },
     unsyncedEdits: () => unsynced,
-    files: () =>
-      [...doc.getMap<Y.Map<unknown>>("files").entries()].map(([id, file]) => ({
-        id,
-        name: file.get("name") as string,
-        content: file.get("content") as Y.Text,
-      })),
+    files: () => listFiles(doc),
+    setOpenFile: (id) => awareness.setLocalStateField("file", id),
     leave: () => {
       networkEvents?.removeEventListener("offline", goOffline);
       networkEvents?.removeEventListener("online", goOnline);

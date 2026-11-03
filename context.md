@@ -205,45 +205,6 @@ Moved here from `CLAUDE.md` (which now holds only working instructions). Append 
 | 2026-11-03 | M6: no real folders yet; names may contain `/` and the file list groups by it, so folders can come later without changing saved data | Nested folders multiply conflicts (moving, deleting non-empty ones) | Real nested folders now |
 | 2026-11-03 | Code health checked by tools, not by eye, and kept in CI: Biome's cognitive-complexity rule (max 15) fails the build on tangled functions; knip fails it on unused files, exports and dependencies; jscpd (run by hand) measures copy-paste. First pass: 10 clones (1.2%) down to 2 (0.2%), 5 unused exports to 0, 5 over-complex functions split into named steps | A growing codebase written fast collects duplicates, dead exports and long functions; a rule in CI stops them on the commit that adds them, instead of a clean-up later | Periodic manual reviews only; jscpd in CI (its threshold would fail on harmless test setup) |
 | 2026-11-03 | Request bodies to the rooms API must be JSON objects (400 otherwise), checked once in a middleware | A body of `null` crashed the route (500): found while removing the six copies of the sign-in check | Checking `body` in each route |
-
-**Open decisions:** hosting (decide when the MVP is ready; a managed platform was the recommendation); when wiring Yjs, use `y-websocket`'s ready-made server instead of our own relay?
-
-## 6. Hard parts that remain (even with Yjs)
-
-Yjs merges bytes in memory. Everything else is ours.
-
-| # | Problem | How to verify |
-|---|---|---|
-| 1 | **Persistence**: when to save, durability vs write load, log growth and compaction. Built in M3 as an append-only change log with author and time, 0.5s batches per person, snapshots every 100 rows (history kept for replay), unloading after 30s empty | Kill the server mid-typing, then measure loss and growth |
-| 2 | **Reconnect/resync**: duplicate or partial delivery, server restart, long-offline client | Fault-inject disconnects, then check identical docs and time the recovery |
-| 3 | **Fault-injection harness**: delay/drop/reorder/duplicate proxy plus convergence checker. Built in M2 as delay, cut, offline and freeze (reorder and duplicate can't happen on one TCP connection; they matter again with several servers in Phase 2) | Chaos run, check the docs never differ |
-| 4 | **Room lifecycle and scaling**: load/evict rooms, memory per room, multi-server routing | Load test; watch memory |
-| 5 | **Presence**: ephemeral cursors, throttling, ghost-user cleanup, heartbeats | Cut a tab's network, time the ghost cursor |
-| 6 | **Latency/throughput**: batching vs responsiveness, big pastes, slow clients | p50/p99 end-to-end latency |
-| 7 | **Safety limits**: message size, rate limits, malformed updates, who can join | Send huge or garbage messages |
-| 8 | **Replay/history** (from `idea.md`) | Scrub through a session timeline |
-
-Also: collaborative undo/redo (each user undoes only their own edits) is subtle, and it lives in the editor layer.
-
-## 7. Current position and next steps
-
-**M1 to M5 are done.** Two people on the same room link co-edit one file live, with names, colours, labelled cursors and a connection status. Dead connections are noticed, offline edits merge on return, and the UI says when it's reconnecting or offline. Rooms are saved to Postgres and survive a server restart. People sign up with email and password or GitHub; members create rooms, invited guests join by link.
-
-| Part | Where | Tests |
-|---|---|---|
-| Sync server: Yjs sync and presence over WebSocket, rooms in memory and loaded from / saved to a store, server-created first file, input validation, heartbeats, message size limit | `server/src/sync-server.ts` (attached to the app's HTTP server) | `server/test/sync-server.test.ts` (35) |
-| Room store: saves every change to Postgres, loads rooms back, history for replay | `server/src/room-store.ts`, `server/src/schema.ts`, migrations in `server/drizzle/` | `server/test/room-store.test.ts` (20), `server/test/persistence.test.ts` (15) |
-| Accounts API: sign up, sign in, sign out (Better Auth); HTTP and WebSockets on one port; who connects (member or guest) | `server/src/auth.ts`, `server/src/app.ts` (started by `server/src/index.ts`) | `server/test/auth.test.ts` (8), `server/test/identity.test.ts` (11), `server/test/permissions.test.ts` (4, M5's done-when) |
-| Rooms API behind the dashboard: create, list, rename, delete; room info, share links, link lookup | `server/src/rooms-api.ts`, `server/src/room-document.ts` | `server/test/rooms-api.test.ts` (12) |
-| Dashboard: your rooms, New room, rename, delete with a confirm | `web/src/dashboard/`, `web/src/api.ts` | `web/src/dashboard/timeAgo.test.ts` (2), `e2e/dashboard.spec.ts` (5), `e2e/sharing.spec.ts` (6) |
-| Home page for visitors: hero with a live, typeable demo (a real editor and a scripted collaborator in the page), features, how it works, on the way, footer; sign-in/sign-up split layout | `web/src/pages/LandingPage.tsx`, `web/src/landing/LiveDemo.tsx`, `web/src/pages/AuthPage.tsx` | `e2e/auth.spec.ts` (11) |
-| Faulty network (tests only): TCP proxy that delays, cuts, goes offline or freezes a client's link | `server/test/faulty-network.ts` | used by the sync server tests |
-| Room session: the client-side module the UI uses (join, files, people, status incl. reconnecting/offline, unsynced edits, change notifications, why a room was refused) | `web/src/room/session.ts` | `web/src/room/session.test.ts` (14) |
-| Accounts in the web app: sign-in/sign-up page, home redirect, who's signed in, where sign-in returns to | `web/src/pages/AuthPage.tsx`, `web/src/pages/HomePage.tsx`, `web/src/auth/` | `web/src/auth/next.test.ts` (3), `e2e/auth.spec.ts` (8) |
-| Paste guard: CodeMirror filter refusing a change too large to sync | `web/src/room/syncSizeLimit.ts` | `web/src/room/syncSizeLimit.test.ts` (4) |
-| UI: routing, room page, header, CodeMirror editor, member and guest identities | `web/src/App.tsx`, `web/src/pages/RoomPage.tsx`, `web/src/room/*.tsx`, `web/src/room/identity.ts` | `web/src/room/identity.test.ts` (3), `e2e/room.spec.ts` (13) + `e2e/smoke.spec.ts` |
-
-**Known gaps (planned):** if writes fail while an empty room is being unloaded, it leaves memory with the write still retrying, so someone joining before the retry lands loads it without those changes (rare: needs the database down); signing out doesn't end a room connection that's already open (it's a guest from its next reconnect); guests' names aren't unique; no email verification or password reset until an email provider (M11); other people's chips don't say who is a guest; presence (names, chips, person ids) is what browsers claim, so someone could pose as another person in the header (only saved authorship is verified); GitHub's full round trip is only checked by hand (it needs a real OAuth App); losing wifi shows at once, but a silently dead server or path is noticed only after y-websocket's 30s silence limit; edits made offline live only in the tab until reconnect (closing it asks first; `y-indexeddb` after M3/M5); edits sent in the moments before a silent failure is noticed aren't counted as unsynced (they still sync on reconnect); each change is capped at 1 MiB, but many offline edits can still add up past the server's 2 MiB on reconnect, and rooms have no total size cap (M3/M11); the web bundle is 1,057 kB (342 kB gzipped) and needs code splitting (M10); the home page has no social-sharing preview tags or favicon yet (M10).
-
-**Next: M6 multi-file projects** (a file tree and tabs, several files per room, and a defined outcome when someone deletes a file another person is editing). See `ROADMAP.md`. See `ROADMAP.md`.
-
+| 2026-11-03 | M6.1: file operations are plain functions on the room's Yjs document (`web/src/room/files.ts`), tested with two in-memory documents; the UI and the server never hold a separate file list | Deterministic tests with no network, the same setup 6.2/6.3's conflict tests need; one source of truth (the document) | File operations as server API calls (a second copy of the truth to keep in step with the document) |
+| 2026-11-03 | M6.1: which file someone has open is theirs alone (tabs are per person), but it goes into presence, so the file list shows who's in which file | Two people in different files must still see each other; following someone into their file is a click | Shared tabs (one person's clicks would move everyone); no indication (people get lost) |
+| 2026-11-03 | M6.1: a file's language comes from its name via `@codemirror/language-data`, each language's code loaded only when a file needs it; renaming swaps it in place (a CodeMirror Compartment) | The standard map from names to languages; the bundle doesn't grow per language; a rename keeps the editor (and undo) | Importing six language packages up front (bigger bundle); our own extension table |

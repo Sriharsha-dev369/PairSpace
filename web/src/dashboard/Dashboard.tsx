@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileCode2, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
-import { type ComponentProps, useEffect, useRef, useState } from "react";
+import { type ComponentProps, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { api, type Role } from "../api";
@@ -9,6 +9,7 @@ import type { Member } from "../auth/useMember";
 import { Badge } from "../ui/Badge";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Logo } from "../ui/Logo";
+import { NameField } from "../ui/NameField";
 import { timeAgo } from "./timeAgo";
 
 interface RoomSummary {
@@ -133,7 +134,10 @@ function RoomRow({ room, onChanged }: { room: RoomSummary; onChanged: () => void
       setRenaming(false);
       onChanged();
     },
-    onError: () => toast.error("Couldn't rename the room. Please try again."),
+    onError: () => {
+      setRenaming(false);
+      toast.error("Couldn't rename the room. Please try again.");
+    },
   });
 
   return (
@@ -143,10 +147,13 @@ function RoomRow({ room, onChanged }: { room: RoomSummary; onChanged: () => void
       </span>
       <div className="min-w-0 flex-1">
         {renaming ? (
-          <RenameField
+          <NameField
             initial={room.title}
-            onSave={(title) => (title === room.title ? setRenaming(false) : rename.mutate(title))}
+            label="Room name"
+            maxLength={80}
+            onSave={(title) => rename.mutate(title)}
             onCancel={() => setRenaming(false)}
+            className="h-7 text-sm"
           />
         ) : (
           <Link
@@ -172,41 +179,6 @@ function RoomRow({ room, onChanged }: { room: RoomSummary; onChanged: () => void
         </span>
       )}
     </li>
-  );
-}
-
-function RenameField({
-  initial,
-  onSave,
-  onCancel,
-}: {
-  initial: string;
-  onSave: (title: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(initial);
-  const input = useRef<HTMLInputElement>(null);
-  useEffect(() => input.current?.select(), []);
-  const save = () => {
-    const title = value.trim();
-    if (title) onSave(title);
-    else onCancel();
-  };
-
-  return (
-    <input
-      ref={input}
-      aria-label="Room name"
-      value={value}
-      maxLength={80}
-      onChange={(event) => setValue(event.target.value)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") save();
-        if (event.key === "Escape") onCancel();
-      }}
-      onBlur={save}
-      className="h-7 w-full rounded-md border border-accent/50 bg-raised px-2 text-sm text-fg outline-none ring-2 ring-accent/20"
-    />
   );
 }
 

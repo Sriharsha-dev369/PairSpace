@@ -3,6 +3,7 @@
 
 import { createSyncServer, type SyncServer } from "pairspace-server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createFile, renameFile } from "./files";
 import { joinRoom, type RoomSession, type User } from "./session";
 
 const alice: User = { id: "alice", name: "Alice", color: "#f472b6" };
@@ -242,8 +243,8 @@ describe("room session", () => {
 
     expect(theirs.people()).toEqual(
       expect.arrayContaining([
-        { id: "alice", name: "Alice", color: alice.color, isMe: false },
-        { id: "bob", name: "Bob", color: bob.color, isMe: true },
+        { id: "alice", name: "Alice", color: alice.color, isMe: false, fileId: null },
+        { id: "bob", name: "Bob", color: bob.color, isMe: true, fileId: null },
       ]),
     );
   });
@@ -272,5 +273,36 @@ describe("room session", () => {
       ]),
     );
     expect(tab.people()).toHaveLength(2);
+  });
+
+  it("tells the UI when a file is added or renamed, but not on every keystroke", async () => {
+    const session = join();
+    await session.synced;
+    let notified = 0;
+    session.subscribe(() => notified++);
+    const [main] = session.files();
+
+    main.content.insert(0, "typing");
+    expect(notified).toBe(0);
+
+    const id = createFile(session.doc, "utils.js");
+    expect(notified).toBe(1);
+    renameFile(session.doc, id, "helpers.js");
+    expect(notified).toBe(2);
+    expect(session.files().map((f) => f.name)).toEqual(["helpers.js", "main.js"]);
+  });
+
+  it("says which file each person has open", async () => {
+    const mine = join("room1", alice);
+    const theirs = join("room1", bob);
+    await Promise.all([mine.synced, theirs.synced]);
+    const [main] = mine.files();
+
+    mine.setOpenFile(main.id);
+
+    await waitFor(
+      () => theirs.people().find((p) => p.id === "alice")?.fileId === main.id,
+      "bob to see which file alice has open",
+    );
   });
 });

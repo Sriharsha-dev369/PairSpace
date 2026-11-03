@@ -1,21 +1,14 @@
+import { randomId } from "./randomId";
 import type { User } from "./session";
 
 const ADJECTIVES = ["Swift", "Calm", "Bright", "Clever", "Bold", "Quiet", "Lucky", "Brave"];
 const ANIMALS = ["Otter", "Falcon", "Panda", "Fox", "Lynx", "Heron", "Koala", "Orca"];
 const COLORS = ["#f472b6", "#60a5fa", "#34d399", "#fbbf24", "#a78bfa", "#f87171", "#22d3ee"];
 const STORAGE_KEY = "pairspace:guest";
-const ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 
 type BrowserStorage = Pick<Storage, "getItem" | "setItem">;
 
 const pick = <T>(items: T[]) => items[Math.floor(Math.random() * items.length)];
-
-// getRandomValues, not randomUUID: browsers offer randomUUID only over https or on localhost
-const randomId = (length: number) =>
-  Array.from(
-    crypto.getRandomValues(new Uint8Array(length)),
-    (b) => ID_ALPHABET[b % ID_ALPHABET.length],
-  ).join("");
 
 // a member is shown by their account name, in a colour fixed by their user id (same everywhere)
 export function memberIdentity({ id, name }: { id: string; name: string }): User {

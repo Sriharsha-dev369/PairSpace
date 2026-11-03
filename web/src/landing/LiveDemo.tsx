@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { Editor } from "../room/Editor";
-import { presence, type RoomFile } from "../room/session";
+import { FileBadge } from "../room/FileBadge";
+import type { RoomFile } from "../room/files";
+import { presence } from "../room/session";
 import { PersonChip } from "../ui/PersonChip";
 
 const LATENCY_MS = 80; // one trip across a typical network, between the two documents
@@ -95,7 +97,7 @@ export function LiveDemo() {
       <div className="overflow-hidden rounded-2xl border border-line bg-canvas shadow-[0_40px_120px_-40px_rgb(139_140_255/0.25)]">
         <div className="flex h-12 items-center gap-3 border-b border-line bg-surface px-4">
           <span className="flex items-center gap-2 text-xs text-muted">
-            <span className="rounded bg-[#f7df1e]/90 px-1 text-[9px] font-bold text-black">JS</span>
+            <FileBadge name="main.js" />
             main.js
           </span>
           <span className="ml-auto flex items-center gap-2">
