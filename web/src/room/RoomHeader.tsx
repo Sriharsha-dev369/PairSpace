@@ -6,18 +6,9 @@ import { Badge } from "../ui/Badge";
 import { LogoMark } from "../ui/Logo";
 import { PersonChip } from "../ui/PersonChip";
 import { HEADER_BUTTON } from "../ui/styles";
+import { STATUS } from "./connectionStatus";
 import { ShareButton } from "./ShareButton";
 import type { ConnectionStatus, Person } from "./session";
-
-const STATUS: Record<ConnectionStatus, { label: string; dot: string }> = {
-  connected: { label: "Connected", dot: "bg-emerald-400 shadow-[0_0_8px] shadow-emerald-400/60" },
-  connecting: { label: "Connecting…", dot: "bg-amber-400 animate-pulse" },
-  reconnecting: { label: "Reconnecting…", dot: "bg-amber-400 animate-pulse" },
-  offline: { label: "Offline", dot: "bg-red-400" },
-  "too-large": { label: "Change too large to sync", dot: "bg-red-400" },
-  deleted: { label: "Room deleted", dot: "bg-red-400" },
-  revoked: { label: "Access turned off", dot: "bg-red-400" },
-};
 
 interface Props {
   roomId: string;

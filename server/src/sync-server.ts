@@ -93,6 +93,10 @@ interface AwarenessChanges {
 // message types of the y-websocket protocol
 const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
+// ours (the web app's sync inspector): a numbered ping, echoed at once as a pong. A connection
+// keeps order, so a pong also tells the client the server has every change it sent before the ping
+const MESSAGE_PING = 100;
+const MESSAGE_PONG = 101;
 
 // y-websocket clients never retry after a close code in 4400-4499, so permanent rejections use it
 const CLOSE_INVALID_ROOM = 4400;
@@ -422,6 +426,13 @@ export function createSyncServer({
               socket,
             );
             break;
+          case MESSAGE_PING: {
+            const reply = encoding.createEncoder();
+            encoding.writeVarUint(reply, MESSAGE_PONG);
+            encoding.writeVarUint(reply, decoding.readVarUint(decoder));
+            socket.send(encoding.toUint8Array(reply));
+            break;
+          }
         }
       } catch (err) {
         say(`malformed message, disconnecting: ${(err as Error).message}`);

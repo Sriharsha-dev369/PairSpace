@@ -1,5 +1,6 @@
 import { Loader2, Play, Square, X } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { duration } from "../duration";
 import { isTrashed, type RoomFile } from "../room/files";
 import { runnableAs } from "./runner";
 import { MAX_OUTPUT_CHARS, MAX_OUTPUT_LINES, type RunStatus, type RunView } from "./runState";
@@ -7,10 +8,7 @@ import { MAX_OUTPUT_CHARS, MAX_OUTPUT_LINES, type RunStatus, type RunView } from
 type Shown = RunStatus | "interrupted";
 
 // how long it ran: "12 ms", "3.4 s"
-function seconds(run: RunView): string {
-  const ms = (run.endedAt ?? run.startedAt) - run.startedAt;
-  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
-}
+const seconds = (run: RunView) => duration((run.endedAt ?? run.startedAt) - run.startedAt);
 
 // one line about the run: who ran what, and how it ended
 function describe(run: RunView, status: Shown): string {

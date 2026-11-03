@@ -3,22 +3,12 @@
 
 import { createSyncServer, type SyncServer } from "pairspace-server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { sleep, waitFor } from "../testing/wait";
 import { createFile, deleteFile, renameFile, restoreFile } from "./files";
 import { joinRoom, type RoomSession, type User } from "./session";
 
 const alice: User = { id: "alice", name: "Alice", color: "#f472b6" };
 const bob: User = { id: "bob", name: "Bob", color: "#60a5fa" };
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// poll until a condition is true (never sleep and hope)
-async function waitFor(condition: () => boolean, what: string, timeoutMs = 1000) {
-  const start = Date.now();
-  while (!condition()) {
-    if (Date.now() - start > timeoutMs) throw new Error(`timed out waiting for: ${what}`);
-    await sleep(5);
-  }
-}
 
 describe("room session", () => {
   let server: SyncServer;

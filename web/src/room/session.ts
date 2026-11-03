@@ -1,6 +1,7 @@
 import type { Awareness } from "y-protocols/awareness";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
+import { type SyncProbe, watchSync } from "../inspector/probe";
 import { listFiles, listTrash, type RoomFile, type TrashedFile } from "./files";
 
 // reconnecting: we were connected and the provider is retrying on its own
@@ -47,6 +48,7 @@ export interface RoomSession {
   files(): RoomFile[]; // by name
   trash(): TrashedFile[]; // deleted files, newest first
   setOpenFile(id: string | null): void; // shows everyone which file I'm in
+  sync: Pick<SyncProbe, "stats" | "subscribe">; // round trip, changes waiting: the sync inspector's
   leave(): void;
 }
 
@@ -92,6 +94,7 @@ export function joinRoom({
     shouldReconnect: ({ code }) => code !== MESSAGE_TOO_BIG && !isPermanentRefusal(code),
   });
   const { awareness } = provider;
+  const probe = watchSync(provider);
 
   awareness.setLocalStateField("user", presence(user));
 
@@ -192,7 +195,9 @@ export function joinRoom({
     files: () => listFiles(doc),
     trash: () => listTrash(doc),
     setOpenFile: (id) => awareness.setLocalStateField("file", id),
+    sync: probe,
     leave: () => {
+      probe.stop();
       networkEvents?.removeEventListener("offline", goOffline);
       networkEvents?.removeEventListener("online", goOnline);
       provider.destroy();

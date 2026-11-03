@@ -1,6 +1,7 @@
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { RoundTripButton, SyncInspector } from "../inspector/SyncInspector";
 import { RunControl, RunPanel } from "../run/RunPanel";
 import { requestStop, runStatus } from "../run/runState";
 import { useCurrentRun, useRunner } from "../run/useRunner";
@@ -19,7 +20,7 @@ import {
 import { displayNames } from "./fileTree";
 import { languageOf } from "./language";
 import { StatusBar } from "./StatusBar";
-import type { Person, RoomSession } from "./session";
+import type { ConnectionStatus, Person, RoomSession } from "./session";
 import { useOpenFiles } from "./useOpenFiles";
 
 interface Props {
@@ -28,16 +29,18 @@ interface Props {
   trash: TrashedFile[];
   people: Person[];
   viewOnly: boolean;
+  status: ConnectionStatus;
 }
 
-// the room's files: the list, this person's tabs, the editor, and the status bar
-export function Workspace({ session, files, trash, people, viewOnly }: Props) {
+// the room's files: the list, this person's tabs, the editor, the status bar and the sync inspector
+export function Workspace({ session, files, trash, people, viewOnly, status }: Props) {
   const { tabs, active, openFile, closeFile } = useOpenFiles(session, files, trash);
   const deleted = active && isTrashed(active) ? active : null;
   const runner = useRunner(session);
   const run = useCurrentRun(session);
   const runShows = run && runStatus(run, new Set(session.awareness.getStates().keys()));
   const [hiddenRun, setHiddenRun] = useState<string | null>(null); // whose output I closed
+  const [inspecting, setInspecting] = useState(false);
 
   function remove(file: RoomFile) {
     deleteFile(session.doc, file.id, session.me);
@@ -96,32 +99,58 @@ export function Workspace({ session, files, trash, people, viewOnly }: Props) {
               onRestore={viewOnly ? undefined : () => restoreFile(session.doc, deleted.id)}
             />
           )}
-          <main className="min-h-0 flex-1">
-            {active ? (
-              <Editor
-                file={active}
-                awareness={session.awareness}
-                readOnly={viewOnly || deleted !== null}
-                autoFocus
-              />
-            ) : (
-              <p className="grid h-full place-items-center text-sm text-faint">
-                {viewOnly
-                  ? "Open a file from the list."
-                  : "Open a file from the list, or make a new one."}
-              </p>
-            )}
-          </main>
+          <OpenFile
+            file={active}
+            session={session}
+            viewOnly={viewOnly}
+            readOnly={viewOnly || deleted !== null}
+          />
           {run && runShows && hiddenRun !== run.id && (
             <RunPanel run={run} status={runShows} onHide={() => setHiddenRun(run.id)} />
           )}
         </div>
+        {inspecting && (
+          <SyncInspector sync={session.sync} status={status} onClose={() => setInspecting(false)} />
+        )}
       </div>
       <StatusBar
         peopleCount={people.length}
         language={active ? (languageOf(active.name)?.name ?? "Plain text") : undefined}
-      />
+      >
+        <RoundTripButton
+          sync={session.sync}
+          open={inspecting}
+          onToggle={() => setInspecting((open) => !open)}
+        />
+      </StatusBar>
     </>
+  );
+}
+
+// the open file in the editor, or what to do when none is open
+function OpenFile({
+  file,
+  session,
+  viewOnly,
+  readOnly,
+}: {
+  file: RoomFile | null;
+  session: RoomSession;
+  viewOnly: boolean;
+  readOnly: boolean;
+}) {
+  return (
+    <main className="min-h-0 flex-1">
+      {file ? (
+        <Editor file={file} awareness={session.awareness} readOnly={readOnly} autoFocus />
+      ) : (
+        <p className="grid h-full place-items-center text-sm text-faint">
+          {viewOnly
+            ? "Open a file from the list."
+            : "Open a file from the list, or make a new one."}
+        </p>
+      )}
+    </main>
   );
 }
 

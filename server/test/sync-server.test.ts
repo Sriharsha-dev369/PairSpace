@@ -391,6 +391,59 @@ describe("sync server", () => {
     });
   });
 
+  // ---------- pings (how a client measures its round trip and learns its changes arrived) ----------
+
+  describe("pings", () => {
+    const ping = (n: number) => {
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, 100); // message type: ping
+      encoding.writeVarUint(encoder, n);
+      return encoding.toUint8Array(encoder);
+    };
+    const pong = (n: number) => (message: Uint8Array) =>
+      message.length === 2 && message[0] === 101 && message[1] === n; // type pong, then n
+
+    it("answers a ping with a pong carrying the same number", async () => {
+      const alice = await connectRaw("room1");
+
+      alice.send(ping(7));
+      alice.send(ping(8));
+
+      await waitFor(() => alice.messages.some(pong(8)), "the pong for ping 8");
+      expect(alice.messages.filter((m) => m[0] === 101)).toEqual([
+        new Uint8Array([101, 7]),
+        new Uint8Array([101, 8]),
+      ]);
+    });
+
+    // a pong confirms every change sent before its ping, so it must wait behind them
+    it("answers a ping sent while the room opens only after the changes sent before it are in", async () => {
+      let letIn = () => {};
+      const deciding = new Promise<void>((resolve) => {
+        letIn = resolve;
+      });
+      await server.close();
+      server = await createSyncServer({
+        port: 0,
+        admit: async () => {
+          await deciding;
+          return { member: null, role: "editor", via: null };
+        },
+      });
+      const alice = await connectRaw("room1");
+
+      alice.send(editMessage(5));
+      alice.send(ping(1));
+      await sleep(SETTLE_MS);
+      expect(alice.messages.some(pong(1))).toBe(false);
+
+      letIn();
+      await waitFor(() => alice.messages.some(pong(1)), "the pong once alice is in");
+      const bob = await joinRoom("room1");
+      expect(text(bob)).toBe("xxxxx");
+    });
+  });
+
   // ---------- roles (who may change the document) ----------
 
   describe("roles", () => {

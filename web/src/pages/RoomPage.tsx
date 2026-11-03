@@ -142,6 +142,7 @@ function Room({
         trash={trash}
         people={people}
         viewOnly={viewOnly}
+        status={status}
       />
       <ConfirmDialog
         open={leaving.state === "blocked"}
