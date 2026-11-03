@@ -103,7 +103,10 @@ async function runJavaScript(modules, entry) {
     for (const at of [...module.imports].sort((a, b) => b.start - a.start)) {
       source = source.slice(0, at.start) + urlOf.get(at.path) + source.slice(at.end);
     }
-    const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+    // a data: URL, not a blob: one: Safari counts importing a blob from this opaque origin as
+    // cross-origin and refuses it; data: is never cross-origin. The comment keeps two files with
+    // the same code apart (the same URL would be one module)
+    const url = `data:text/javascript;charset=utf-8,${encodeURIComponent(`${source}\n// ${module.path}`)}`;
     urlOf.set(module.path, url);
     fileOf.set(url, module.path);
   }

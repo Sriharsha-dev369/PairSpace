@@ -10,7 +10,16 @@ export default defineConfig({
   // a stray test.only would silently skip every other test in CI
   forbidOnly: !!process.env.CI,
   use: { baseURL: `http://localhost:${WEB_PORT}`, trace: "retain-on-failure" },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    // Run's sandbox rests on rules each browser engine applies its own way (Safari refused what
+    // Chrome allowed), so its tests run in each engine
+    { name: "webkit", use: { ...devices["Desktop Safari"] }, testMatch: "run.spec.ts" },
+    // Playwright's Firefox doesn't start on the development Mac, so it runs in CI only
+    ...(process.env.CI
+      ? [{ name: "firefox", use: { ...devices["Desktop Firefox"] }, testMatch: "run.spec.ts" }]
+      : []),
+  ],
   webServer: [
     {
       command: "npx tsx server/src/index.ts",
