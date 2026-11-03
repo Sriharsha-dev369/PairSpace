@@ -218,7 +218,7 @@ describe("sharing", () => {
     const [owner, member, stranger] = [await newAccount(), await newAccount(), await newAccount()];
     const id = await newRoom(owner);
     const code = (await store.shareLink(id, owner, "editor")) ?? "";
-    const room = { title: "Test room" };
+    const room = { title: "Test room", owner: "Someone" }; // newAccount's name
 
     const as = (userId: string | null, linkCode: string | null) =>
       store.access(id, { userId, linkCode });
@@ -246,6 +246,7 @@ describe("sharing", () => {
 
     expect(await store.access(id, { userId: null, linkCode: null })).toEqual({
       title: "Test room",
+      owner: null,
       role: "editor",
       via: null,
     });
@@ -278,6 +279,7 @@ describe("sharing", () => {
     expect(view).not.toBe(edit);
     expect(await store.access(id, { userId: null, linkCode: view })).toEqual({
       title: "Test room",
+      owner: "Someone",
       role: "viewer",
       via: view,
     });

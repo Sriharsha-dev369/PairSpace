@@ -194,7 +194,7 @@ describe("sharing API", () => {
     expect((await lookUp("made-up-code")).status).toBe(404);
   });
 
-  it("tells people with access a room's title and their role, and nobody else", async () => {
+  it("tells people with access a room's title, its owner and their role, and nobody else", async () => {
     const [alice, bob] = [await signUp("Alice"), await signUp("Bob")];
     const { id } = await createRoom(alice, "Pairing");
     const { code } = await (await shareLink(alice, id)).json();
@@ -202,9 +202,14 @@ describe("sharing API", () => {
     expect(await (await api("GET", `/${id}`, { cookie: alice })).json()).toEqual({
       id,
       title: "Pairing",
+      owner: "Alice",
       role: "owner",
     });
-    expect((await (await api("GET", `/${id}?link=${code}`)).json()).role).toBe("editor"); // a guest
+    // a guest by link, who's told whose room it is ("Alice invited you")
+    expect(await (await api("GET", `/${id}?link=${code}`)).json()).toMatchObject({
+      owner: "Alice",
+      role: "editor",
+    });
     expect((await api("GET", `/${id}`, { cookie: bob })).status).toBe(404);
     expect((await api("GET", `/${id}`)).status).toBe(404);
   });

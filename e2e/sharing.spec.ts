@@ -1,7 +1,7 @@
 // End-to-end spec for sharing: links that let people in, and the room address that doesn't.
 
 import { expect, test } from "@playwright/test";
-import { createRoom, memberBrowser, shareLink } from "./members";
+import { createRoom, joinAsSuggested, memberBrowser, shareLink } from "./members";
 
 test("the owner shares an edit link, and a guest who opens it edits with them", async ({
   browser,
@@ -24,6 +24,7 @@ test("the owner shares an edit link, and a guest who opens it edits with them", 
 
   const guest = await (await browser.newContext()).newPage();
   await guest.goto(link);
+  await joinAsSuggested(guest);
   await guest.locator(".cm-content").click();
   await guest.keyboard.type("hello from the guest");
 
@@ -49,7 +50,7 @@ test("someone signed in who opens a link finds the room on their dashboard", asy
   const page = await (await memberBrowser(browser, {}, "Bob")).newPage();
 
   await page.goto(link);
-  await expect(page.locator(".cm-content")).toBeVisible();
+  await joinAsSuggested(page);
   await page.goto("/");
 
   const row = page.getByRole("listitem").filter({ hasText: "Pairing" });
@@ -70,6 +71,7 @@ test("a view-only link lets someone watch, but not type", async ({ browser }) =>
   await owner.goto(`/r/${roomId}`);
   const viewer = await (await browser.newContext()).newPage();
   await viewer.goto(await shareLink(ownerBrowser, roomId, "viewer"));
+  await joinAsSuggested(viewer);
   await expect(viewer.getByText("View only")).toBeVisible();
 
   await viewer.locator(".cm-content").click();
@@ -90,7 +92,7 @@ test("turning off a link from Share disconnects whoever used it", async ({ brows
   await owner.goto(`/r/${roomId}`);
   const guest = await (await browser.newContext()).newPage();
   await guest.goto(link);
-  await expect(guest.locator(".cm-content")).toBeVisible();
+  await joinAsSuggested(guest);
 
   await owner.getByRole("button", { name: "Share" }).click();
   const editLinkRow = owner.getByRole("group", { name: "Can edit" });

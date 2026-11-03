@@ -154,14 +154,14 @@ describe("who connects", () => {
     expect(change?.authorId).toBeNull();
   });
 
-  it("keeps at most 64 characters of a guest's name", async () => {
+  it("keeps at most 40 characters of a guest's name (as the app names people)", async () => {
     await createRoom();
     const guest = await join("x".repeat(100));
 
     guest.probe.insert(0, "by a long name");
 
     const change = await savedChange((c) => c.author?.startsWith("xxx") ?? false);
-    expect(change?.author).toBe("x".repeat(64));
+    expect(change?.author).toBe("x".repeat(40));
   });
 
   it("treats a signed-out session as a guest", async () => {

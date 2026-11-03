@@ -75,7 +75,7 @@ export function roomsApi({ auth, store, webOrigin, dropRoom, revokeAccess }: Opt
     const id = c.req.param("id");
     const access = await accessOf(c, id);
     if (access === "no-room" || access === "no-access") return c.notFound();
-    return c.json({ id, title: access.title, role: access.role });
+    return c.json({ id, title: access.title, owner: access.owner, role: access.role });
   });
 
   // every saved change, oldest first, for replay: only for people who can edit, since it shows

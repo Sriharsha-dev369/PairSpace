@@ -1,14 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link2Off, Loader2, Lock, SearchX, Trash2 } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useBlocker, useParams, useSearchParams } from "react-router";
 import { api, type Role } from "../api";
+import { authClient } from "../auth/client";
 import { type Member, useMember } from "../auth/useMember";
-import { guestIdentity, memberIdentity } from "../room/identity";
+import { guestIdentity, hasChosenName, memberIdentity, nameGuest } from "../room/identity";
 import { RoomHeader } from "../room/RoomHeader";
 import { NO_ACCESS, ROOM_NOT_FOUND, type RoomSession } from "../room/session";
 import { useRoomSession } from "../room/useRoomSession";
 import { useRoomState } from "../room/useRoomState";
+import { Welcome } from "../room/Welcome";
 import { Workspace } from "../room/Workspace";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { FullScreen } from "../ui/FullScreen";
@@ -35,9 +37,29 @@ function JoinRoom({
   member: Member | null;
   link?: string;
 }) {
-  const user = useMemo(() => (member ? memberIdentity(member) : guestIdentity()), [member]);
-  const join = useRoomSession(roomId, user, link);
+  // fixed for this visit: renaming changes the session in place, so it never rejoins
+  const [user] = useState(() => (member ? memberIdentity(member) : guestIdentity()));
+  // a guest's first invite: they watch from the name screen until they join
+  const [hidden] = useState(() => member === null && !hasChosenName());
+  const [naming, setNaming] = useState(hidden);
+  const join = useRoomSession(roomId, user, link, hidden);
 
+  if (join.state === "ready" && naming) {
+    const { session } = join;
+    return (
+      <Invited
+        roomId={roomId}
+        link={link}
+        session={session}
+        onJoin={(name) => {
+          nameGuest(name);
+          session.rename(name);
+          session.appear();
+          setNaming(false);
+        }}
+      />
+    );
+  }
   if (join.state === "ready") {
     return <Room roomId={roomId} session={join.session} isMember={member !== null} link={link} />;
   }
@@ -58,6 +80,41 @@ function Joining({ roomId }: { roomId: string }) {
   );
 }
 
+// the room's title and owner, and my role in it ("Ada invited you")
+function useRoomInfo(roomId: string, link?: string) {
+  return useQuery({
+    queryKey: ["room", roomId, link],
+    queryFn: () =>
+      api<{ title: string; owner: string | null; role: Role }>(
+        "GET",
+        `/api/rooms/${roomId}${link ? `?link=${encodeURIComponent(link)}` : ""}`,
+      ),
+  });
+}
+
+function Invited({
+  roomId,
+  link,
+  session,
+  onJoin,
+}: {
+  roomId: string;
+  link?: string;
+  session: RoomSession;
+  onJoin: (name: string) => void;
+}) {
+  const info = useRoomInfo(roomId, link);
+  return (
+    <Welcome
+      session={session}
+      title={info.data?.title}
+      owner={info.data?.owner}
+      viewOnly={info.data?.role === "viewer"}
+      onJoin={onJoin}
+    />
+  );
+}
+
 function Room({
   roomId,
   session,
@@ -70,15 +127,7 @@ function Room({
   link?: string;
 }) {
   const { status, people, unsyncedEdits, files, trash } = useRoomState(session);
-  // its title, and whether I'm its owner (who shares it)
-  const info = useQuery({
-    queryKey: ["room", roomId, link],
-    queryFn: () =>
-      api<{ title: string; role: Role }>(
-        "GET",
-        `/api/rooms/${roomId}${link ? `?link=${encodeURIComponent(link)}` : ""}`,
-      ),
-  });
+  const info = useRoomInfo(roomId, link); // its title, and whether I'm its owner (who shares it)
   const viewOnly = info.data?.role === "viewer";
   usePageTitle(info.data?.title ?? "Room");
   useEffect(() => warm("home", "dashboard", "replay"), []);
@@ -139,6 +188,12 @@ function Room({
         people={people}
         unsyncedEdits={unsyncedEdits}
         isMember={isMember}
+        onRename={(name) => {
+          session.rename(name);
+          // a member's name is their account's; a guest's is kept by this browser
+          if (isMember) void authClient.updateUser({ name });
+          else nameGuest(name);
+        }}
       />
       <Workspace
         session={session}

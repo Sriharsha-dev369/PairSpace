@@ -1,7 +1,7 @@
 // End-to-end spec for the dashboard: a member's own rooms, made, renamed and deleted there.
 
 import { expect, type Page, test } from "@playwright/test";
-import { createRoom, memberBrowser, shareLink } from "./members";
+import { createRoom, joinAsSuggested, memberBrowser, shareLink } from "./members";
 
 // the row for a room on the dashboard, found by its name
 const row = (page: Page, title: string) => page.getByRole("listitem").filter({ hasText: title });
@@ -39,7 +39,7 @@ test("deleting a room asks first, then removes it and tells anyone inside", asyn
   const roomId = await createRoom(ownerBrowser, "Doomed");
   const guest = await (await browser.newContext()).newPage();
   await guest.goto(await shareLink(ownerBrowser, roomId));
-  await expect(guest.locator(".cm-content")).toBeVisible();
+  await joinAsSuggested(guest);
   const owner = await ownerBrowser.newPage();
   await owner.goto("/");
 

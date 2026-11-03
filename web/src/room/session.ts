@@ -5,6 +5,7 @@ import { NETWORKS, type Network, simulatedLink } from "../inspector/link";
 import type { MessageLog } from "../inspector/messages";
 import { type SyncProbe, watchSync } from "../inspector/probe";
 import { listFiles, listTrash, type RoomFile, type TrashedFile } from "./files";
+import { MAX_NAME } from "./identity";
 
 // reconnecting: we were connected and the provider is retrying on its own
 // offline: the browser says there's no network, so we stopped trying until it's back
@@ -59,6 +60,8 @@ export interface RoomSession {
   files(): RoomFile[]; // by name
   trash(): TrashedFile[]; // deleted files, newest first
   setOpenFile(id: string | null): void; // shows everyone which file I'm in
+  appear(): void; // a hidden session (see JoinOptions) shows me to everyone from now on
+  rename(name: string): void; // everyone sees the new name at once
   sync: SessionSync;
   leave(): void;
 }
@@ -74,7 +77,7 @@ function personIn(clientId: number, state: Record<string, unknown>, me: User): P
   const network = NETWORKS.find((known) => known === state.network) ?? "normal";
   return {
     id,
-    name: claimed.name ?? "",
+    name: String(claimed.name ?? "").slice(0, MAX_NAME),
     color: claimed.color ?? "",
     isMe: id === me.id,
     fileId,
@@ -107,6 +110,7 @@ interface JoinOptions {
   user: User;
   networkEvents?: EventTarget; // fires "online" and "offline": the browser's window, or a test's
   link?: string; // a share link's code: how someone without access of their own gets in
+  hidden?: boolean; // see who's in the room without being seen, until appear()
 }
 
 export function joinRoom({
@@ -115,6 +119,7 @@ export function joinRoom({
   user,
   networkEvents = typeof window === "undefined" ? undefined : window,
   link,
+  hidden = false,
 }: JoinOptions): RoomSession {
   const doc = new Y.Doc();
   const simulated = simulatedLink(); // a normal network, until the sync inspector picks a bad one
@@ -128,7 +133,10 @@ export function joinRoom({
   const { awareness } = provider;
   const probe = watchSync(provider);
 
-  awareness.setLocalStateField("user", presence(user));
+  // someone is in the room once their presence names them: until then they only watch
+  let me = user;
+  let visible = !hidden;
+  if (visible) awareness.setLocalStateField("user", presence(me));
 
   const listeners = new Set<() => void>();
   const notify = () => {
@@ -203,7 +211,9 @@ export function joinRoom({
   synced.catch(() => {}); // a caller that never awaits synced shouldn't see an unhandled rejection
 
   return {
-    me: user,
+    get me() {
+      return me;
+    },
     doc,
     awareness,
     synced,
@@ -233,6 +243,14 @@ export function joinRoom({
     files: () => listFiles(doc),
     trash: () => listTrash(doc),
     setOpenFile: (id) => awareness.setLocalStateField("file", id),
+    appear: () => {
+      visible = true;
+      awareness.setLocalStateField("user", presence(me));
+    },
+    rename: (name) => {
+      me = { ...me, name };
+      if (visible) awareness.setLocalStateField("user", presence(me));
+    },
     sync: {
       stats: probe.stats,
       subscribe: (listener) => {

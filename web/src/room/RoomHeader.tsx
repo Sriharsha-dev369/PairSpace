@@ -1,13 +1,16 @@
-import { History, LogIn } from "lucide-react";
+import { History, LogIn, Pencil } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router";
 import { useSignInHere } from "../auth/next";
 import { SignOutButton } from "../auth/SignOutButton";
 import { NetworkTag } from "../inspector/SyncInspector";
 import { Badge } from "../ui/Badge";
 import { LogoMark } from "../ui/Logo";
+import { NameField } from "../ui/NameField";
 import { PersonChip } from "../ui/PersonChip";
 import { HEADER_BUTTON } from "../ui/styles";
 import { STATUS } from "./connectionStatus";
+import { MAX_NAME, nameProblem } from "./identity";
 import { ShareButton } from "./ShareButton";
 import type { ConnectionStatus, Person } from "./session";
 
@@ -21,6 +24,7 @@ interface Props {
   people: Person[];
   unsyncedEdits: boolean;
   isMember: boolean; // signed in; otherwise a guest who joined through the link
+  onRename: (name: string) => void;
 }
 
 // members sign out here; guests sign in and come straight back to this room
@@ -35,6 +39,56 @@ function AccountButton({ isMember }: { isMember: boolean }) {
   );
 }
 
+// me, as the others see me; the pencil renames me (for everyone, at once)
+function MyChip({
+  me,
+  isMember,
+  onRename,
+}: {
+  me: Person;
+  isMember: boolean;
+  onRename: (name: string) => void;
+}) {
+  const [renaming, setRenaming] = useState(false);
+  if (renaming) {
+    return (
+      <div className="w-44">
+        <NameField
+          initial={me.name}
+          label="Your name"
+          maxLength={MAX_NAME}
+          problem={nameProblem}
+          onSave={(name) => {
+            onRename(name);
+            setRenaming(false);
+          }}
+          onCancel={() => setRenaming(false)}
+          className="h-7 text-xs"
+        />
+      </div>
+    );
+  }
+  return (
+    <PersonChip {...me} testId="my-name">
+      <span className="text-faint">you</span>
+      {!isMember && (
+        <span className="rounded-full bg-line px-1.5 text-[10px] font-medium text-muted">
+          guest
+        </span>
+      )}
+      <button
+        type="button"
+        aria-label="Change your name"
+        title="Change your name"
+        onClick={() => setRenaming(true)}
+        className="-mr-1 grid h-5 w-5 place-items-center rounded-full text-faint transition hover:bg-line hover:text-fg"
+      >
+        <Pencil size={10} />
+      </button>
+    </PersonChip>
+  );
+}
+
 export function RoomHeader({
   roomId,
   title,
@@ -45,6 +99,7 @@ export function RoomHeader({
   people,
   unsyncedEdits,
   isMember,
+  onRename,
 }: Props) {
   const me = people.find((p) => p.isMe);
   const others = people.filter((p) => !p.isMe);
@@ -79,16 +134,7 @@ export function RoomHeader({
             {person.network !== "normal" && <NetworkTag network={person.network} />}
           </PersonChip>
         ))}
-        {me && (
-          <PersonChip {...me} testId="my-name">
-            <span className="text-faint">you</span>
-            {!isMember && (
-              <span className="rounded-full bg-line px-1.5 text-[10px] font-medium text-muted">
-                guest
-              </span>
-            )}
-          </PersonChip>
-        )}
+        {me && <MyChip me={me} isMember={isMember} onRename={onRename} />}
 
         <span className="mx-1 h-5 w-px bg-line" />
         <span className="flex items-center gap-2 text-xs text-muted">

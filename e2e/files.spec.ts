@@ -5,6 +5,7 @@ import { expect, type Page, test } from "@playwright/test";
 import {
   createRoom,
   fileList,
+  joinAsSuggested,
   memberBrowser,
   newFile,
   newRoomUrl,
@@ -124,7 +125,7 @@ test("when two people show the same name, only the one who deleted a file is tol
     );
     const page = await context.newPage();
     await page.goto(url);
-    await expect(page.locator(".cm-content")).toBeVisible();
+    await joinAsSuggested(page); // as "Bold Heron", the name it suggests
     return page;
   };
   const [alice, bob] = [await sameName("guest-alice"), await sameName("guest-bob")];

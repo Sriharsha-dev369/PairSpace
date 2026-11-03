@@ -131,7 +131,7 @@ const KEEPALIVE = new Uint8Array([MESSAGE_AWARENESS, 1, 0]);
 const MAX_MESSAGE_BYTES = 2 * 1024 * 1024;
 
 // a guest's name comes from their browser, so it's capped before it's saved
-const MAX_GUEST_NAME = 64;
+const MAX_GUEST_NAME = 40; // the web app's MAX_NAME (identity.ts)
 
 // the room name comes from the URL, which the client controls, so restrict it
 const ROOM_NAME = /^[A-Za-z0-9_-]{1,64}$/;

@@ -1,7 +1,14 @@
 // End-to-end spec for accounts: signing up, in and out, and what guests and members can do.
 
 import { expect, test } from "@playwright/test";
-import { createRoom, memberBrowser, newEmail, PASSWORD, shareLink } from "./members";
+import {
+  createRoom,
+  joinAsSuggested,
+  memberBrowser,
+  newEmail,
+  PASSWORD,
+  shareLink,
+} from "./members";
 
 test("signing up takes you to your rooms, and you're in them under your account name", async ({
   page,
@@ -117,6 +124,7 @@ test("a guest signing in from a room comes back to it under their account name",
   await expect(owner.locator(".cm-content")).toBeVisible();
   const guest = await (await browser.newContext()).newPage();
   await guest.goto(await shareLink(ownerBrowser, roomId));
+  await joinAsSuggested(guest);
   await expect(guest.getByText("guest", { exact: true })).toBeVisible();
 
   await guest.getByRole("link", { name: "Sign in" }).click();

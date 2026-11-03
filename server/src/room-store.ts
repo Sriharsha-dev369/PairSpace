@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { connect, DATABASE_URL, type Database } from "./db";
 import { newLinkCode } from "./room-id";
-import { roomLinks, roomMembers, rooms, roomUpdates } from "./schema";
+import { roomLinks, roomMembers, rooms, roomUpdates, users } from "./schema";
 import type { Role, RoomStore, StoredChange } from "./sync-server";
 
 export interface HistoryEntry extends StoredChange {
@@ -19,8 +19,12 @@ export interface RoomSummary {
   lastEditedAt: Date;
 }
 
-// via: the share link this access depends on (turning it off ends the access); null if none
-export type Access = { title: string; role: Role; via: string | null } | "no-room" | "no-access";
+// owner: the owner's name ("Alice invited you"); null for rooms from before owners. via: the share
+// link this access depends on (turning it off ends the access); null if none
+export type Access =
+  | { title: string; owner: string | null; role: Role; via: string | null }
+  | "no-room"
+  | "no-access";
 
 export interface PostgresRoomStore extends RoomStore {
   // `state`: the room's first content, saved as its first change
@@ -190,20 +194,23 @@ export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
 
     async access(id, { userId, linkCode }) {
       const [room] = await db
-        .select({ title: rooms.title, ownerId: rooms.ownerId })
+        .select({ title: rooms.title, ownerId: rooms.ownerId, owner: users.name })
         .from(rooms)
+        .leftJoin(users, eq(users.id, rooms.ownerId))
         .where(eq(rooms.id, id));
       if (!room) return "no-room";
-      const { title } = room;
-      if (room.ownerId === null) return { title, role: "editor", via: null }; // before owners: open
-      if (userId !== null && room.ownerId === userId) return { title, role: "owner", via: null };
+      const { title, owner } = room;
+      if (room.ownerId === null) return { title, owner, role: "editor", via: null }; // before owners: open
+      if (userId !== null && room.ownerId === userId) {
+        return { title, owner, role: "owner", via: null };
+      }
       const grants = [
         ...(userId === null ? [] : await membership(id, userId)),
         ...(linkCode === null ? [] : await linkAccess(id, linkCode)),
       ];
       // the strongest grant wins: editing over viewing
       const best = grants.find((g) => g.role === "editor") ?? grants[0];
-      return best ? { title, ...best } : "no-access";
+      return best ? { title, owner, ...best } : "no-access";
     },
 
     async listLinks(id, ownerId) {

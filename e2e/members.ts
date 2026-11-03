@@ -58,12 +58,21 @@ export async function newRoomUrl(browser: Browser): Promise<string> {
 }
 
 // each person gets their own browser context: separate storage, like two different computers.
-// Invited people join as guests (no account)
+// Invited people join as guests (no account), keeping the name the invite screen suggests
 export async function openRoomAs(browser: Browser, url: string): Promise<Page> {
   const page = await (await browser.newContext()).newPage();
   await page.goto(url);
-  await expect(page.locator(".cm-content")).toBeVisible();
+  await joinAsSuggested(page);
   return page;
+}
+
+// a new guest meets the name screen first: join under the name it suggests
+export async function joinAsSuggested(page: Page) {
+  const join = page.getByRole("button", { name: "Join room" });
+  const editor = page.locator(".cm-content");
+  await expect(join.or(editor)).toBeVisible();
+  if (await join.isVisible()) await join.click();
+  await expect(editor).toBeVisible();
 }
 
 // two guests in a new room, each in their own browser

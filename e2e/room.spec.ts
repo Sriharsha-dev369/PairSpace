@@ -1,7 +1,7 @@
 // End-to-end spec: real browsers, real web app, real sync server (started by playwright.config.ts).
 
 import { type Dialog, expect, test } from "@playwright/test";
-import { memberBrowser, newRoomUrl, openRoomAs, twoGuestsIn } from "./members";
+import { joinAsSuggested, memberBrowser, newRoomUrl, openRoomAs, twoGuestsIn } from "./members";
 
 test("an invalid room link says so and leads back to your rooms", async ({ browser }) => {
   const page = await (await memberBrowser(browser)).newPage();
@@ -130,7 +130,7 @@ test("pasting something too large to sync says so, and the room keeps syncing", 
   const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"] });
   const alice = await context.newPage();
   await alice.goto(await newRoomUrl(browser));
-  await expect(alice.locator(".cm-content")).toBeVisible();
+  await joinAsSuggested(alice);
   await alice.evaluate((text) => navigator.clipboard.writeText(text), "x".repeat(3 * 1024 * 1024));
   await alice.locator(".cm-content").click();
 
@@ -146,6 +146,7 @@ test("the same person with two tabs open shows up once", async ({ browser }) => 
   const sameBrowser = await browser.newContext(); // tabs of one browser share its storage
   const tab = await sameBrowser.newPage();
   await tab.goto(url);
+  await joinAsSuggested(tab); // the other tab then goes straight in, as the same person
   const otherTab = await sameBrowser.newPage();
   await otherTab.goto(url);
   await expect(otherTab.locator(".cm-content")).toBeVisible();

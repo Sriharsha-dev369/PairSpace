@@ -165,6 +165,57 @@ describe("room session", () => {
     expect(aliceAsSeen()?.network).toBe("normal");
   });
 
+  // the invite name screen: who's here shows live, and Join is instant
+  it("can join hidden: it sees who's here without being seen, until it appears", async () => {
+    const theirs = join("room1", alice);
+    await theirs.synced;
+    const mine = joinRoom({
+      serverUrl: `ws://localhost:${server.port}`,
+      room: "room1",
+      user: bob,
+      networkEvents: new EventTarget(),
+      hidden: true,
+    });
+    sessions.push(mine);
+    await mine.synced;
+
+    await waitFor(() => mine.people().some((p) => p.id === "alice"), "bob to see alice");
+    theirs.awareness.setLocalStateField("file", "probe"); // a presence change to wait for
+    await waitFor(() => mine.people().some((p) => p.fileId === "probe"), "bob to get it");
+    expect(theirs.people().map((p) => p.id)).toEqual(["alice"]);
+
+    mine.appear();
+    await waitFor(() => theirs.people().some((p) => p.id === "bob"), "alice to see bob");
+  });
+
+  it("renames me for everyone at once", async () => {
+    const mine = join("room1", alice);
+    const theirs = join("room1", bob);
+    await Promise.all([mine.synced, theirs.synced]);
+
+    mine.rename("Ada Lovelace");
+
+    expect(mine.me.name).toBe("Ada Lovelace");
+    await waitFor(
+      () => theirs.people().some((p) => p.id === "alice" && p.name === "Ada Lovelace"),
+      "bob to see the new name",
+    );
+  });
+
+  it("cuts a name another browser claims to 40 characters", async () => {
+    const mine = join("room1", alice);
+    const theirs = join("room1", bob);
+    await Promise.all([mine.synced, theirs.synced]);
+
+    mine.awareness.setLocalStateField("user", { ...alice, name: "x".repeat(500) }); // a modified client
+
+    await waitFor(
+      () => theirs.people().some((p) => p.id === "alice" && p.name.startsWith("x")),
+      "bob to get alice's presence",
+    );
+    expect(theirs.people().find((p) => p.id === "alice")?.name).toBe("x".repeat(40));
+  });
+
   it("counts only edits made while disconnected as unsynced, until they've synced", async () => {
     const network = new EventTarget();
     const mine = join("room1", alice, network);
