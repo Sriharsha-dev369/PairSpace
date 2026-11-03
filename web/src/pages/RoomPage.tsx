@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link2Off, Loader2, Lock, SearchX, Trash2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { useParams, useSearchParams } from "react-router";
+import { useBlocker, useParams, useSearchParams } from "react-router";
 import { api } from "../api";
 import { type Member, useMember } from "../auth/useMember";
 import { Editor } from "../room/Editor";
@@ -12,6 +12,7 @@ import { StatusBar } from "../room/StatusBar";
 import { NO_ACCESS, ROOM_NOT_FOUND, type RoomSession } from "../room/session";
 import { useRoomSession } from "../room/useRoomSession";
 import { useRoomState } from "../room/useRoomState";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { FullScreen } from "../ui/FullScreen";
 import { LogoMark } from "../ui/Logo";
 import { Notice } from "../ui/Notice";
@@ -89,6 +90,15 @@ function Room({
     return () => window.removeEventListener("beforeunload", askFirst);
   }, [session]);
 
+  // leaving inside the app is no page unload, so beforeunload can't ask: the router does
+  const leaving = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      currentLocation.pathname !== nextLocation.pathname &&
+      session.unsyncedEdits() &&
+      session.status() !== "deleted" &&
+      session.status() !== "revoked",
+  );
+
   if (status === "revoked") {
     return (
       <Notice
@@ -128,6 +138,15 @@ function Room({
         <Editor file={file} awareness={session.awareness} readOnly={info.data?.role === "viewer"} />
       </main>
       <StatusBar peopleCount={people.length} />
+      <ConfirmDialog
+        open={leaving.state === "blocked"}
+        onOpenChange={(open) => !open && leaving.state === "blocked" && leaving.reset()}
+        title="Leave with edits that haven't synced?"
+        description="You're not connected right now, so your latest edits exist only in this tab. Leave now and they're lost; stay, and they sync when you reconnect."
+        cancelLabel="Stay"
+        confirmLabel="Leave anyway"
+        onConfirm={() => leaving.state === "blocked" && leaving.proceed()}
+      />
     </div>
   );
 }

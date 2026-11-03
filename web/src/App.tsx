@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { CSSProperties } from "react";
-import { BrowserRouter, Route, Routes } from "react-router";
+import { createBrowserRouter, RouterProvider } from "react-router";
 import { Toaster } from "sonner";
 import { AuthPage } from "./pages/AuthPage";
 import { HomePage } from "./pages/HomePage";
@@ -18,19 +18,20 @@ const toastTheme = {
 // what the server said (the dashboard's room list), cached and refetched after changes
 const queryClient = new QueryClient();
 
+// a data router: it lets a page ask before you navigate away (a room with unsynced edits)
+const router = createBrowserRouter([
+  { path: "/", element: <HomePage /> },
+  { path: "/sign-in", element: <AuthPage mode="sign-in" /> },
+  { path: "/sign-up", element: <AuthPage mode="sign-up" /> },
+  { path: "/r/:roomId", element: <RoomPage /> },
+  { path: "/join/:code", element: <JoinPage /> },
+]);
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/sign-in" element={<AuthPage mode="sign-in" />} />
-          <Route path="/sign-up" element={<AuthPage mode="sign-up" />} />
-          <Route path="/r/:roomId" element={<RoomPage />} />
-          <Route path="/join/:code" element={<JoinPage />} />
-        </Routes>
-        <Toaster theme="dark" position="bottom-right" style={toastTheme} />
-      </BrowserRouter>
+      <RouterProvider router={router} />
+      <Toaster theme="dark" position="bottom-right" style={toastTheme} />
     </QueryClientProvider>
   );
 }

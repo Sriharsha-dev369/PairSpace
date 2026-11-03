@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileCode2, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
-import { AlertDialog } from "radix-ui";
 import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { api } from "../api";
 import { SignOutButton } from "../auth/SignOutButton";
 import type { Member } from "../auth/useMember";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Logo } from "../ui/Logo";
 import { timeAgo } from "./timeAgo";
 
@@ -227,43 +227,16 @@ function DeleteRoomButton({ room, onDeleted }: { room: RoomSummary; onDeleted: (
   });
 
   return (
-    <AlertDialog.Root>
-      <AlertDialog.Trigger asChild>
+    <ConfirmDialog
+      title={`Delete “${room.title}”?`}
+      description="The room and its whole history are removed for everyone, and anyone in it now is disconnected. This can't be undone."
+      confirmLabel="Delete room"
+      onConfirm={() => remove.mutate()}
+      trigger={
         <IconButton label="Delete" danger>
           <Trash2 size={14} />
         </IconButton>
-      </AlertDialog.Trigger>
-      <AlertDialog.Portal>
-        <AlertDialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-[2px]" />
-        <AlertDialog.Content className="fixed top-1/2 left-1/2 w-[min(92vw,26rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-line bg-surface p-6 shadow-2xl shadow-black/50">
-          <AlertDialog.Title className="text-base font-semibold">
-            Delete “{room.title}”?
-          </AlertDialog.Title>
-          <AlertDialog.Description className="mt-2 text-sm leading-relaxed text-muted">
-            The room and its whole history are removed for everyone, and anyone in it now is
-            disconnected. This can't be undone.
-          </AlertDialog.Description>
-          <div className="mt-6 flex justify-end gap-2">
-            <AlertDialog.Cancel asChild>
-              <button
-                type="button"
-                className="h-9 rounded-lg px-3.5 text-sm font-medium text-muted transition hover:bg-raised hover:text-fg"
-              >
-                Cancel
-              </button>
-            </AlertDialog.Cancel>
-            <AlertDialog.Action asChild>
-              <button
-                type="button"
-                onClick={() => remove.mutate()}
-                className="h-9 rounded-lg bg-red-500 px-3.5 text-sm font-semibold text-white transition hover:bg-red-400"
-              >
-                Delete room
-              </button>
-            </AlertDialog.Action>
-          </div>
-        </AlertDialog.Content>
-      </AlertDialog.Portal>
-    </AlertDialog.Root>
+      }
+    />
   );
 }

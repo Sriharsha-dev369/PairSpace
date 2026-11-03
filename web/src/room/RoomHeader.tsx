@@ -1,7 +1,7 @@
 import { LogIn } from "lucide-react";
 import { Link, useLocation } from "react-router";
 import { SignOutButton } from "../auth/SignOutButton";
-import { Logo } from "../ui/Logo";
+import { LogoMark } from "../ui/Logo";
 import { ShareButton } from "./ShareButton";
 import type { ConnectionStatus, Person } from "./session";
 
@@ -99,7 +99,14 @@ export function RoomHeader({
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
-      <Logo />
+      {/* the way out: members back to their rooms, guests to the home page */}
+      <Link
+        to="/"
+        className="flex items-center gap-2 rounded-md text-sm font-semibold tracking-tight transition hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      >
+        <LogoMark />
+        {isMember ? "Your rooms" : "PairSpace"}
+      </Link>
       <span className="text-faint">/</span>
       <span
         data-testid="room-title"
