@@ -13,6 +13,7 @@ export interface RoomFile {
 export interface TrashedFile extends RoomFile {
   deletedAt: number;
   deletedBy: string; // the name they showed
+  deletedById?: string; // who, exactly: names can repeat (guests' are picked at random)
 }
 
 export const isTrashed = (file: RoomFile): file is TrashedFile => "deletedBy" in file;
@@ -20,6 +21,7 @@ export const isTrashed = (file: RoomFile): file is TrashedFile => "deletedBy" in
 interface Deleted {
   at: number;
   by: string;
+  byId?: string; // absent in files deleted before it was recorded
 }
 
 const MAX_NAME = 100;
@@ -51,7 +53,9 @@ export function listTrash(doc: Y.Doc): TrashedFile[] {
   return [...filesOf(doc).entries()]
     .map(([id, file]) => describe(id, file))
     .flatMap(({ deleted, ...file }) =>
-      deleted ? [{ ...file, deletedAt: deleted.at, deletedBy: deleted.by }] : [],
+      deleted
+        ? [{ ...file, deletedAt: deleted.at, deletedBy: deleted.by, deletedById: deleted.byId }]
+        : [],
     )
     .sort((a, b) => b.deletedAt - a.deletedAt);
 }
@@ -95,8 +99,13 @@ function fileOf(doc: Y.Doc, id: string) {
 }
 
 // to the trash, with its contents; `by`: the name of whoever deleted it
-export function deleteFile(doc: Y.Doc, id: string, by: string, at = Date.now()) {
-  fileOf(doc, id).set("deleted", { at, by } satisfies Deleted);
+export function deleteFile(
+  doc: Y.Doc,
+  id: string,
+  by: { id: string; name: string },
+  at = Date.now(),
+) {
+  fileOf(doc, id).set("deleted", { at, by: by.name, byId: by.id } satisfies Deleted);
 }
 
 export function restoreFile(doc: Y.Doc, id: string) {

@@ -1,8 +1,43 @@
 import { randomId } from "./randomId";
 import type { User } from "./session";
 
-const ADJECTIVES = ["Swift", "Calm", "Bright", "Clever", "Bold", "Quiet", "Lucky", "Brave"];
-const ANIMALS = ["Otter", "Falcon", "Panda", "Fox", "Lynx", "Heron", "Koala", "Orca"];
+// 256 names: two guests in one room rarely match (people are told apart by id anyway)
+const ADJECTIVES = [
+  "Swift",
+  "Calm",
+  "Bright",
+  "Clever",
+  "Bold",
+  "Quiet",
+  "Lucky",
+  "Brave",
+  "Gentle",
+  "Keen",
+  "Merry",
+  "Nimble",
+  "Proud",
+  "Sunny",
+  "Witty",
+  "Eager",
+];
+const ANIMALS = [
+  "Otter",
+  "Falcon",
+  "Panda",
+  "Fox",
+  "Lynx",
+  "Heron",
+  "Koala",
+  "Orca",
+  "Badger",
+  "Crane",
+  "Dolphin",
+  "Gecko",
+  "Hare",
+  "Ibis",
+  "Marten",
+  "Wren",
+];
 const COLORS = ["#f472b6", "#60a5fa", "#34d399", "#fbbf24", "#a78bfa", "#f87171", "#22d3ee"];
 const STORAGE_KEY = "pairspace:guest";
 
@@ -10,11 +45,16 @@ type BrowserStorage = Pick<Storage, "getItem" | "setItem">;
 
 const pick = <T>(items: T[]) => items[Math.floor(Math.random() * items.length)];
 
+// a colour that's always the same for the same key (a member's id, say)
+export function colorFor(key: string): string {
+  let hash = 0;
+  for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return COLORS[hash % COLORS.length];
+}
+
 // a member is shown by their account name, in a colour fixed by their user id (same everywhere)
 export function memberIdentity({ id, name }: { id: string; name: string }): User {
-  let hash = 0;
-  for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return { id, name, color: COLORS[hash % COLORS.length] };
+  return { id, name, color: colorFor(id) };
 }
 
 // a guest (invited, no account) gets a random identity, kept by this browser, so all its tabs

@@ -40,7 +40,7 @@ export function Workspace({ session, files, trash, people, viewOnly }: Props) {
   const [hiddenRun, setHiddenRun] = useState<string | null>(null); // whose output I closed
 
   function remove(file: RoomFile) {
-    deleteFile(session.doc, file.id, session.me.name);
+    deleteFile(session.doc, file.id, session.me);
     closeFile(file.id);
     toast(`Deleted ${file.name}`, {
       description: "It's in the trash.",
@@ -92,7 +92,7 @@ export function Workspace({ session, files, trash, people, viewOnly }: Props) {
           {deleted && (
             <DeletedBanner
               file={deleted}
-              byMe={deleted.deletedBy === session.me.name}
+              byMe={deleted.deletedById === session.me.id}
               onRestore={viewOnly ? undefined : () => restoreFile(session.doc, deleted.id)}
             />
           )}

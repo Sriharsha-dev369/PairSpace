@@ -53,7 +53,7 @@ describe("replaying a room", () => {
     sync(bob, ada);
     renameFile(ada, "first", "index.js");
     sync(ada, bob);
-    deleteFile(bob, utils, "Bob");
+    deleteFile(bob, utils, { id: "bob", name: "Bob" });
 
     const timeline = createTimeline(steps);
 

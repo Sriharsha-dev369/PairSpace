@@ -77,3 +77,45 @@ test("a view-only link can't replay the room", async ({ browser }) => {
   await viewer.goto(`${new URL(viewer.url()).pathname}/replay${new URL(viewer.url()).search}`);
   await expect(viewer.getByText("Replay is for people who can edit")).toBeVisible();
 });
+
+// what a person wrote, as replay marks it in the code
+const writtenBy = async (page: Page, name: string) =>
+  (await page.getByTestId("replay-code").locator(`[data-author="${name}"]`).allInnerTexts()).join(
+    "",
+  );
+
+// members, with names of their own: guests' names are picked at random and can match
+test("replay colours the code by who wrote it, and Play goes through to the end", async ({
+  browser,
+}) => {
+  const owner = await memberBrowser(browser, {}, "Ada Owner");
+  const roomId = await createRoom(owner);
+  const ada = await owner.newPage();
+  await ada.goto(`/r/${roomId}`);
+  const grace = await (await memberBrowser(browser, {}, "Grace Member")).newPage();
+  await grace.goto(await shareLink(owner, roomId));
+  await expect(grace.locator(".cm-content")).toBeVisible();
+  await ada.locator(".cm-content").click();
+  await ada.keyboard.insertText("ada ");
+  await savedChanges(ada, 2);
+  await grace.locator(".cm-content").click();
+  await grace.keyboard.press("ControlOrMeta+End");
+  await grace.keyboard.insertText("grace");
+  await savedChanges(ada, 3);
+
+  await ada.getByRole("link", { name: "Replay" }).click();
+
+  await expect.poll(() => writtenBy(ada, "Ada Owner")).toBe("ada ");
+  await expect.poll(() => writtenBy(ada, "Grace Member")).toBe("grace");
+  const legend = ada.getByRole("list", { name: "People in this replay" });
+  await expect(legend).toContainText("Ada Owner");
+  await expect(legend).toContainText("Grace Member");
+
+  const slider = ada.getByRole("slider", { name: "Step" });
+  await slider.focus();
+  await ada.keyboard.press("Home");
+  await ada.getByRole("button", { name: "Play" }).click();
+  await expect(ada.getByRole("button", { name: "Pause" })).toBeVisible();
+  await expect(slider).toHaveValue("2");
+  await expect(ada.getByRole("button", { name: "Play" })).toBeVisible(); // stops at the end
+});

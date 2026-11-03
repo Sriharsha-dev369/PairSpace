@@ -127,12 +127,17 @@ describe("the trash", () => {
     const [main] = listFiles(alice);
     main.content.insert(0, "keep me");
 
-    deleteFile(alice, main.id, "Alice");
+    deleteFile(alice, main.id, { id: "alice", name: "Alice" });
     sync(alice, bob);
 
     expect(names(bob)).toEqual([]);
     const [trashed] = listTrash(bob);
-    expect(trashed).toMatchObject({ id: main.id, name: "main.js", deletedBy: "Alice" });
+    expect(trashed).toMatchObject({
+      id: main.id,
+      name: "main.js",
+      deletedBy: "Alice",
+      deletedById: "alice",
+    });
     expect(trashed.content.toString()).toBe("keep me");
   });
 
@@ -141,8 +146,8 @@ describe("the trash", () => {
     const first = createFile(doc, "a.js");
     const second = createFile(doc, "b.js");
 
-    deleteFile(doc, first, "Alice", 1000);
-    deleteFile(doc, second, "Alice", 2000);
+    deleteFile(doc, first, { id: "alice", name: "Alice" }, 1000);
+    deleteFile(doc, second, { id: "alice", name: "Alice" }, 2000);
 
     expect(listTrash(doc).map((file) => file.name)).toEqual(["b.js", "a.js"]);
   });
@@ -150,7 +155,7 @@ describe("the trash", () => {
   it("brings a restored file back for everyone", () => {
     const [alice, bob] = twoPeople();
     const [main] = listFiles(alice);
-    deleteFile(alice, main.id, "Alice");
+    deleteFile(alice, main.id, { id: "alice", name: "Alice" });
     sync(alice, bob);
 
     restoreFile(bob, main.id);
@@ -162,7 +167,7 @@ describe("the trash", () => {
 
   it("frees a deleted file's name for a new file", () => {
     const doc = newRoom();
-    deleteFile(doc, listFiles(doc)[0].id, "Alice");
+    deleteFile(doc, listFiles(doc)[0].id, { id: "alice", name: "Alice" });
 
     expect(() => createFile(doc, "main.js")).not.toThrow();
   });
@@ -173,7 +178,7 @@ describe("the trash", () => {
     const fileId = listFiles(alice)[0].id;
 
     // at the same moment, before either hears of the other: alice deletes, bob types
-    deleteFile(alice, fileId, "Alice");
+    deleteFile(alice, fileId, { id: "alice", name: "Alice" });
     listFiles(bob)[0].content.insert(0, "bob's work");
     sync(alice, bob);
 
@@ -189,7 +194,7 @@ describe("the trash", () => {
     const [alice, bob] = twoPeople();
     const fileId = listFiles(alice)[0].id;
 
-    deleteFile(alice, fileId, "Alice");
+    deleteFile(alice, fileId, { id: "alice", name: "Alice" });
     renameFile(bob, fileId, "index.js");
     sync(alice, bob);
 
@@ -200,11 +205,11 @@ describe("the trash", () => {
   it("ends the same for everyone when one person restores a file as another deletes it", () => {
     const [alice, bob] = twoPeople();
     const fileId = createFile(alice, "utils.js");
-    deleteFile(alice, fileId, "Alice");
+    deleteFile(alice, fileId, { id: "alice", name: "Alice" });
     sync(alice, bob);
 
     restoreFile(alice, fileId);
-    deleteFile(bob, fileId, "Bob");
+    deleteFile(bob, fileId, { id: "bob", name: "Bob" });
     sync(alice, bob);
 
     expect(names(alice)).toEqual(names(bob));

@@ -109,6 +109,31 @@ test("someone deletes the file you're typing in: you're told who, can restore it
   await expect(editor(alice)).not.toContainText("more"); // typed before Restore, so it'd be here
 });
 
+// guests' names are picked at random, so two can match: "You" must mean you, not your name
+test("when two people show the same name, only the one who deleted a file is told 'You'", async ({
+  browser,
+}) => {
+  const url = await newRoomUrl(browser);
+  const sameName = async (id: string) => {
+    const context = await browser.newContext();
+    await context.addInitScript(
+      (guest) => {
+        localStorage.setItem("pairspace:guest", JSON.stringify(guest));
+      },
+      { id, name: "Bold Heron", color: "#34d399" },
+    );
+    const page = await context.newPage();
+    await page.goto(url);
+    await expect(page.locator(".cm-content")).toBeVisible();
+    return page;
+  };
+  const [alice, bob] = [await sameName("guest-alice"), await sameName("guest-bob")];
+
+  await fileList(alice).getByRole("button", { name: "Delete main.js" }).click();
+
+  await expect(bob.getByText("Bold Heron deleted this file")).toBeVisible();
+});
+
 test("a deleted file waits in the trash: Undo brings it back, and so can anyone else", async ({
   browser,
 }) => {

@@ -290,7 +290,7 @@ describe("room session", () => {
     renameFile(session.doc, id, "helpers.js");
     expect(notified).toBe(2);
     expect(session.files().map((f) => f.name)).toEqual(["helpers.js", "main.js"]);
-    deleteFile(session.doc, id, "Alice");
+    deleteFile(session.doc, id, { id: "alice", name: "Alice" });
     expect(notified).toBe(3);
     expect(session.trash().map((f) => f.name)).toEqual(["helpers.js"]);
     restoreFile(session.doc, id);
