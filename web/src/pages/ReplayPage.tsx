@@ -1,6 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, History, Lock, Pause, Play, SearchX } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FolderOpen,
+  History,
+  Lock,
+  Pause,
+  Play,
+  SearchX,
+} from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { ApiError, api } from "../api";
 import { useMember } from "../auth/useMember";
@@ -14,12 +23,14 @@ import {
   type Timeline,
 } from "../replay/timeline";
 import { FileBadge } from "../room/FileBadge";
-import { listFiles } from "../room/files";
+import { listFiles, type RoomFile } from "../room/files";
 import { colorFor } from "../room/identity";
 import { Loading } from "../ui/FullScreen";
 import { LogoMark } from "../ui/Logo";
 import { Notice } from "../ui/Notice";
 import { PersonChip } from "../ui/PersonChip";
+import { SidePanel } from "../ui/Sheet";
+import { useIsPhone } from "../ui/useIsPhone";
 import { usePageTitle } from "../ui/usePageTitle";
 
 const when = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "medium" });
@@ -100,29 +111,9 @@ function Replay({ timeline, title, room }: { timeline: Timeline; title: string; 
           This room has no saved changes to replay.
         </p>
       ) : (
-        <div className="flex min-h-0 flex-1">
-          <aside
-            aria-label="Files at this step"
-            className="flex w-36 shrink-0 flex-col gap-0.5 border-r border-line bg-surface py-2 sm:w-60"
-          >
-            {files.map((each) => (
-              <button
-                key={each.id}
-                type="button"
-                onClick={() => setChosen(each.id)}
-                className={`flex h-8 items-center gap-2 px-4 text-left text-[13px] ${each.id === file?.id ? "bg-raised text-fg" : "text-muted hover:bg-raised/50 hover:text-fg"}`}
-              >
-                <FileBadge name={each.name} />
-                <span data-testid="file-name" className="truncate">
-                  {each.name}
-                </span>
-              </button>
-            ))}
-          </aside>
-          <main className="min-h-0 flex-1">
-            <ReplayEditor name={file?.name ?? ""} runs={runs} />
-          </main>
-        </div>
+        <FilesAndCode files={files} file={file} onChoose={setChosen}>
+          <ReplayEditor name={file?.name ?? ""} runs={runs} />
+        </FilesAndCode>
       )}
       {last >= 0 && (
         <Controls
@@ -140,6 +131,71 @@ function Replay({ timeline, title, room }: { timeline: Timeline; title: string; 
           }}
         />
       )}
+    </div>
+  );
+}
+
+// the files at this step beside the code; on a phone they slide in from a button above it
+function FilesAndCode({
+  files,
+  file,
+  onChoose,
+  children,
+}: {
+  files: RoomFile[];
+  file: RoomFile | null;
+  onChoose: (id: string) => void;
+  children: ReactNode;
+}) {
+  const phone = useIsPhone();
+  const [listing, setListing] = useState(false);
+  return (
+    <div className="flex min-h-0 flex-1">
+      <SidePanel
+        phone={phone}
+        title="Files"
+        side="left"
+        open={!phone || listing}
+        onOpenChange={setListing}
+      >
+        <aside
+          aria-label="Files at this step"
+          className="flex w-full shrink-0 flex-col gap-0.5 border-line bg-surface py-2 md:w-60 md:border-r"
+        >
+          {files.map((each) => (
+            <button
+              key={each.id}
+              type="button"
+              onClick={() => {
+                onChoose(each.id);
+                setListing(false);
+              }}
+              className={`flex h-8 items-center gap-2 px-4 text-left text-[13px] ${each.id === file?.id ? "bg-raised text-fg" : "text-muted hover:bg-raised/50 hover:text-fg"}`}
+            >
+              <FileBadge name={each.name} />
+              <span data-testid="file-name" className="truncate">
+                {each.name}
+              </span>
+            </button>
+          ))}
+        </aside>
+      </SidePanel>
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {phone && (
+          <div className="flex h-9 shrink-0 items-center gap-3 border-b border-line bg-surface px-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setListing(true)}
+              className="flex h-7 items-center gap-1.5 rounded-md px-2 font-medium text-muted transition hover:bg-raised hover:text-fg"
+            >
+              <FolderOpen size={14} />
+              Files
+            </button>
+            <span className="truncate text-muted">{file?.name}</span>
+          </div>
+        )}
+        <div className="min-h-0 flex-1">{children}</div>
+      </main>
     </div>
   );
 }

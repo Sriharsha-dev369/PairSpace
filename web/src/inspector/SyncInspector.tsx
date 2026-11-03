@@ -168,7 +168,7 @@ export function SyncInspector({
   return (
     <aside
       aria-label="Sync inspector"
-      className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-line bg-surface"
+      className="flex w-full shrink-0 flex-col overflow-y-auto border-line bg-surface md:w-72 md:border-l"
     >
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-line pr-1.5 pl-3">
         <h2 className="text-xs font-semibold">Sync inspector</h2>

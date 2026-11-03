@@ -85,7 +85,7 @@ export function FileList({
   return (
     <aside
       aria-label="Files"
-      className="flex w-36 shrink-0 flex-col border-r border-line bg-surface sm:w-60"
+      className="flex w-full shrink-0 flex-col border-line bg-surface md:w-60 md:border-r"
     >
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-line pr-2 pl-4">
         <h2 className="text-xs font-semibold text-muted">Files</h2>

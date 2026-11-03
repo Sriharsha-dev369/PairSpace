@@ -1,4 +1,4 @@
-import { History, LogIn, Pencil } from "lucide-react";
+import { History, LogIn, Menu, Pencil } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { useSignInHere } from "../auth/next";
@@ -8,7 +8,9 @@ import { Badge } from "../ui/Badge";
 import { LogoMark } from "../ui/Logo";
 import { NameField } from "../ui/NameField";
 import { PersonChip } from "../ui/PersonChip";
+import { Sheet } from "../ui/Sheet";
 import { HEADER_BUTTON } from "../ui/styles";
+import { useIsPhone } from "../ui/useIsPhone";
 import { STATUS } from "./connectionStatus";
 import { MAX_NAME, nameProblem } from "./identity";
 import { ShareButton } from "./ShareButton";
@@ -89,72 +91,135 @@ function MyChip({
   );
 }
 
-export function RoomHeader({
+// who's here: the others (with any bad network they're simulating), then me
+function People({ people, isMember, onRename }: Pick<Props, "people" | "isMember" | "onRename">) {
+  const me = people.find((p) => p.isMe);
+  return (
+    <>
+      {people
+        .filter((p) => !p.isMe)
+        .map((person) => (
+          <PersonChip key={person.id} {...person} testId="other-person">
+            {person.network !== "normal" && <NetworkTag network={person.network} />}
+          </PersonChip>
+        ))}
+      {me && <MyChip me={me} isMember={isMember} onRename={onRename} />}
+    </>
+  );
+}
+
+function Connection({ status, unsyncedEdits }: Pick<Props, "status" | "unsyncedEdits">) {
+  return (
+    <span className="flex items-center gap-2 text-xs text-muted">
+      <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS[status].dot}`} />
+      <span data-testid="connection-status">{STATUS[status].label}</span>
+      {unsyncedEdits && (status === "offline" || status === "reconnecting") && (
+        <span data-testid="unsynced-hint" className="text-faint">
+          · your edits will sync when you're back
+        </span>
+      )}
+    </span>
+  );
+}
+
+// replay, account and share: the room's ways onward
+function Actions({
   roomId,
   title,
   canShare,
   replay,
-  viewOnly,
-  status,
-  people,
-  unsyncedEdits,
   isMember,
-  onRename,
-}: Props) {
-  const me = people.find((p) => p.isMe);
-  const others = people.filter((p) => !p.isMe);
+}: Pick<Props, "roomId" | "title" | "canShare" | "replay" | "isMember">) {
+  return (
+    <>
+      {replay && (
+        <Link to={replay} className={HEADER_BUTTON}>
+          <History size={14} />
+          Replay
+        </Link>
+      )}
+      <AccountButton isMember={isMember} />
+      {canShare && <ShareButton roomId={roomId} title={title ?? roomId} />}
+    </>
+  );
+}
+
+// on a phone: the connection's dot, and everything else in a menu that slides in
+function PhoneMenu(props: Props) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="ml-auto flex items-center gap-1">
+      <span
+        className={`h-2 w-2 rounded-full ${STATUS[props.status].dot}`}
+        title={STATUS[props.status].label}
+      />
+      <button
+        type="button"
+        aria-label="Menu"
+        onClick={() => setOpen(true)}
+        className={HEADER_BUTTON}
+      >
+        <Menu size={16} />
+      </button>
+      <Sheet title="Menu" side="right" open={open} onOpenChange={setOpen}>
+        <div className="flex flex-col gap-6 p-5">
+          <section>
+            <h2 className="text-xs font-medium text-faint">In this room</h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <People {...props} />
+            </div>
+          </section>
+          <Connection {...props} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Actions {...props} />
+          </div>
+        </div>
+      </Sheet>
+    </div>
+  );
+}
+
+export function RoomHeader(props: Props) {
+  const { roomId, title, viewOnly, people, isMember } = props;
+  const phone = useIsPhone();
+  const alone = people.every((p) => p.isMe);
+  const home = isMember ? "Your rooms" : "PairSpace";
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
       {/* the way out: members back to their rooms, guests to the home page */}
       <Link
         to="/"
-        className="flex items-center gap-2 rounded-md text-sm font-semibold tracking-tight transition hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        aria-label={home}
+        className="flex shrink-0 items-center gap-2 rounded-md text-sm font-semibold tracking-tight transition hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
         <LogoMark />
-        {isMember ? "Your rooms" : "PairSpace"}
+        <span className="hidden md:inline">{home}</span>
       </Link>
       <span className="text-faint">/</span>
       <span
         data-testid="room-title"
-        className={title ? "truncate text-sm font-medium" : "font-mono text-xs text-muted"}
+        className={`min-w-0 truncate ${title ? "text-sm font-medium" : "font-mono text-xs text-muted"}`}
       >
         {title ?? roomId}
       </span>
       {viewOnly && <Badge>View only</Badge>}
 
-      <div className="ml-auto flex items-center gap-2">
-        {others.length === 0 && (
-          <span className="mr-1 hidden text-xs text-faint md:inline">
-            Only you here. Share the link to code together
-          </span>
-        )}
-        {others.map((person) => (
-          <PersonChip key={person.id} {...person} testId="other-person">
-            {person.network !== "normal" && <NetworkTag network={person.network} />}
-          </PersonChip>
-        ))}
-        {me && <MyChip me={me} isMember={isMember} onRename={onRename} />}
-
-        <span className="mx-1 h-5 w-px bg-line" />
-        <span className="flex items-center gap-2 text-xs text-muted">
-          <span className={`h-2 w-2 rounded-full ${STATUS[status].dot}`} />
-          <span data-testid="connection-status">{STATUS[status].label}</span>
-          {unsyncedEdits && (status === "offline" || status === "reconnecting") && (
-            <span data-testid="unsynced-hint" className="text-faint">
-              · your edits will sync when you're back
+      {phone ? (
+        <PhoneMenu {...props} />
+      ) : (
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {alone && (
+            <span className="mr-1 hidden text-xs text-faint lg:inline">
+              Only you here. Share the link to code together
             </span>
           )}
-        </span>
-        {replay && (
-          <Link to={replay} className={HEADER_BUTTON}>
-            <History size={14} />
-            Replay
-          </Link>
-        )}
-        <AccountButton isMember={isMember} />
-        {canShare && <ShareButton roomId={roomId} title={title ?? roomId} />}
-      </div>
+          <People {...props} />
+          <span className="mx-1 h-5 w-px bg-line" />
+          <Connection {...props} />
+          <Actions {...props} />
+        </div>
+      )}
     </header>
   );
 }

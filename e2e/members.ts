@@ -59,8 +59,8 @@ export async function newRoomUrl(browser: Browser): Promise<string> {
 
 // each person gets their own browser context: separate storage, like two different computers.
 // Invited people join as guests (no account), keeping the name the invite screen suggests
-export async function openRoomAs(browser: Browser, url: string): Promise<Page> {
-  const page = await (await browser.newContext()).newPage();
+export async function openRoomAs(browser: Browser, url: string, options = {}): Promise<Page> {
+  const page = await (await browser.newContext(options)).newPage();
   await page.goto(url);
   await joinAsSuggested(page);
   return page;

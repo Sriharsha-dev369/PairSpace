@@ -1,10 +1,12 @@
-import { Trash2 } from "lucide-react";
+import { FolderOpen, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { RoundTripButton, SyncInspector } from "../inspector/SyncInspector";
 import { RunControl, RunPanel } from "../run/RunPanel";
 import { requestStop, runStatus } from "../run/runState";
 import { useCurrentRun, useRunner } from "../run/useRunner";
+import { SidePanel } from "../ui/Sheet";
+import { useIsPhone } from "../ui/useIsPhone";
 import { Editor } from "./Editor";
 import { FileList } from "./FileList";
 import { FileTabs } from "./FileTabs";
@@ -41,6 +43,12 @@ export function Workspace({ session, files, trash, people, viewOnly, status }: P
   const runShows = run && runStatus(run, new Set(session.awareness.getStates().keys()));
   const [hiddenRun, setHiddenRun] = useState<string | null>(null); // whose output I closed
   const [inspecting, setInspecting] = useState(false);
+  const phone = useIsPhone();
+  const [listing, setListing] = useState(false); // a phone's file list, over the editor
+  const show = (id: string) => {
+    openFile(id);
+    setListing(false);
+  };
 
   function remove(file: RoomFile) {
     deleteFile(session.doc, file.id, session.me);
@@ -60,20 +68,38 @@ export function Workspace({ session, files, trash, people, viewOnly, status }: P
   return (
     <>
       <div className="flex min-h-0 flex-1">
-        <FileList
-          files={files}
-          trash={trash}
-          activeId={active?.id ?? null}
-          people={people}
-          canEdit={!viewOnly}
-          onOpen={openFile}
-          onCreate={(name) => openFile(createFile(session.doc, name))}
-          onRename={(id, name) => renameFile(session.doc, id, name)}
-          onDelete={remove}
-          onRestore={(id) => restoreFile(session.doc, id)}
-        />
+        <SidePanel
+          phone={phone}
+          title="Files"
+          side="left"
+          open={!phone || listing}
+          onOpenChange={setListing}
+        >
+          <FileList
+            files={files}
+            trash={trash}
+            activeId={active?.id ?? null}
+            people={people}
+            canEdit={!viewOnly}
+            onOpen={show}
+            onCreate={(name) => show(createFile(session.doc, name))}
+            onRename={(id, name) => renameFile(session.doc, id, name)}
+            onDelete={remove}
+            onRestore={(id) => restoreFile(session.doc, id)}
+          />
+        </SidePanel>
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex h-9 shrink-0 items-center border-b border-line bg-surface">
+            {phone && (
+              <button
+                type="button"
+                aria-label="Files"
+                onClick={() => setListing(true)}
+                className="grid h-full w-10 shrink-0 place-items-center border-r border-line text-muted transition hover:text-fg"
+              >
+                <FolderOpen size={15} />
+              </button>
+            )}
             <FileTabs
               tabs={tabs}
               names={displayNames(files)}
@@ -109,9 +135,15 @@ export function Workspace({ session, files, trash, people, viewOnly, status }: P
             <RunPanel run={run} status={runShows} onHide={() => setHiddenRun(run.id)} />
           )}
         </div>
-        {inspecting && (
+        <SidePanel
+          phone={phone}
+          title="Sync inspector"
+          side="bottom"
+          open={inspecting}
+          onOpenChange={setInspecting}
+        >
           <SyncInspector sync={session.sync} status={status} onClose={() => setInspecting(false)} />
-        )}
+        </SidePanel>
       </div>
       <StatusBar
         peopleCount={people.length}
