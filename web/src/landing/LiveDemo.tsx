@@ -9,8 +9,9 @@ const NETWORK = Symbol("network"); // marks changes that arrived from the other 
 const GRACE = { name: "Grace", color: "#34d399" };
 const YOU = { name: "You", color: "#60a5fa" };
 const OPENING = "// This is the real PairSpace editor. Type anywhere in it.\n\n";
+// ends on the last line, so her name sits over the blank line above, not over her code
 // biome-ignore lint/suspicious/noTemplateCurlyInString: it's the code she types, a template literal
-const SHE_WRITES = 'function greet(name) {\n  return `Hello, ${name}!`;\n}\n\ngreet("everyone");\n';
+const SHE_WRITES = 'function greet(name) {\n  return `Hello, ${name}!`;\n}\n\ngreet("everyone");';
 
 interface Demo {
   file: RoomFile;

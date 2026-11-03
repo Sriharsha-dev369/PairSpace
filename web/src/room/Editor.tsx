@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import type { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
-import { cursorLabels } from "./cursorLabels";
 import type { RoomFile } from "./session";
 import { syncSizeLimit } from "./syncSizeLimit";
 
@@ -42,10 +41,10 @@ const theme = EditorView.theme(
     // inline-block + 1lh: the caret spans the whole line, so the label can sit exactly on top of it
     ".cm-ySelectionCaret": { display: "inline-block", height: "1lh", verticalAlign: "top" },
     ".cm-ySelectionCaretDot": { display: "none" }, // the label already marks the cursor; the dot only flickered
+    // every remote cursor always shows whose it is (the library's default only shows it on hover)
     ".cm-ySelectionInfo": {
-      opacity: "0",
-      transition: "opacity 0.3s ease",
-      pointerEvents: "none", // an invisible label must not swallow clicks on the code under it
+      opacity: "1",
+      pointerEvents: "none", // the label must not swallow clicks on the code under it
       top: "-15px",
       height: "15px",
       lineHeight: "15px",
@@ -55,9 +54,6 @@ const theme = EditorView.theme(
       fontSize: "10.5px",
       fontWeight: "600",
       color: "var(--color-canvas)",
-    },
-    ".cm-yActive > .cm-ySelectionInfo, .cm-ySelectionCaret:hover > .cm-ySelectionInfo": {
-      opacity: "1",
     },
   },
   { dark: true },
@@ -89,7 +85,6 @@ export function Editor({ file, awareness, readOnly = false }: Props) {
           theme, // before oneDark: earlier extensions take precedence
           oneDark,
           yCollab(file.content, awareness, { undoManager }),
-          cursorLabels(awareness),
           EditorState.readOnly.of(readOnly),
         ],
       }),

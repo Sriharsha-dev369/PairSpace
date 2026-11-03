@@ -84,21 +84,23 @@ test("the name label sits exactly on top of the other person's cursor", async ({
   expect(Math.abs(caret.height - line.height), "caret is a full line tall").toBeLessThan(0.5);
 });
 
-test("the name label fades while the other person is idle and returns when they move", async ({
+test("the name label stays on the other person's cursor, even while they're idle", async ({
   browser,
 }) => {
   const url = await newRoomUrl(browser);
   const alice = await openRoomAs(browser, url);
   const bob = await openRoomAs(browser, url);
+  const aliceName = await alice.getByTestId("my-name").innerText();
   await alice.locator(".cm-content").click();
   await alice.keyboard.type("hello");
   const label = bob.locator(".cm-ySelectionInfo");
+  await expect(label).toHaveText(aliceName);
+
+  // what's checked is time passing: idle for longer than labels once took to fade (2.5s)
+  await bob.waitForTimeout(3500);
 
   await expect(label).toHaveCSS("opacity", "1");
-  await expect(label).toHaveCSS("opacity", "0", { timeout: 6000 });
-
-  await alice.keyboard.press("ArrowLeft");
-  await expect(label).toHaveCSS("opacity", "1");
+  await expect(label).toBeVisible();
 });
 
 test("going offline shows it, and edits made offline reach the other person once back", async ({
