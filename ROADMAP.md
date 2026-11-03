@@ -22,7 +22,7 @@ M0 Relay ✅ ─► M1 Co-editing ─► M2 Reliability ─► M3 Persistence + 
 | M3 | Persistence and database | L | ✅ done |
 | M4 | Accounts (email + GitHub) | M | ✅ done |
 | M5 | Dashboard and share links with roles | M | ✅ done |
-| M6 | Multi-file projects | L | in progress: 6.1 files and tabs, 6.2 trash (done-when met); next 6.3 rename conflicts and `/` grouping |
+| M6 | Multi-file projects | L | ✅ done 2026-11-03 (files and tabs, trash with restore, converging renames, "(2)" duplicates, `/` folders in the list) |
 | M7 | In-browser Run (JS + Python) | M | |
 | M8 | Session replay | M | |
 | M9 | Sync inspector and bad-network toggle | M | |

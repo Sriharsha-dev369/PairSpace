@@ -71,7 +71,7 @@ function startDemo(): Demo {
   later(() => typeFrom(0), 900);
 
   return {
-    file: { id: "demo", name: "main.js", content: mine.getText("code") },
+    file: { id: "demo", name: "main.js", content: mine.getText("code"), createdAt: 0 },
     awareness: myAwareness,
     stop: () => {
       for (const timer of timers) clearTimeout(timer);

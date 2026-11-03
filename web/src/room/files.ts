@@ -7,6 +7,7 @@ export interface RoomFile {
   id: string;
   name: string; // may contain "/": the file list groups by it, but there are no real folders
   content: Y.Text;
+  createdAt: number; // 0 for files from before it was recorded (a room's first file)
 }
 
 export interface TrashedFile extends RoomFile {
@@ -29,6 +30,7 @@ const describe = (id: string, file: Y.Map<unknown>) => ({
   id,
   name: file.get("name") as string,
   content: file.get("content") as Y.Text,
+  createdAt: (file.get("createdAt") as number | undefined) ?? 0,
   deleted: file.get("deleted") as Deleted | undefined,
 });
 
@@ -37,8 +39,11 @@ export function listFiles(doc: Y.Doc): RoomFile[] {
   return [...filesOf(doc).entries()]
     .map(([id, file]) => describe(id, file))
     .filter(({ deleted }) => !deleted)
-    .map(({ id, name, content }) => ({ id, name, content }))
-    .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+    .map(({ deleted: _, ...file }) => file)
+    .sort(
+      (a, b) =>
+        a.name.localeCompare(b.name) || a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+    );
 }
 
 // deleted files, newest first
@@ -69,7 +74,7 @@ function checkName(name: string, taken: string[]) {
 }
 
 // a new, empty file; returns its id
-export function createFile(doc: Y.Doc, name: string): string {
+export function createFile(doc: Y.Doc, name: string, at = Date.now()): string {
   checkName(
     name,
     listFiles(doc).map((file) => file.name),
@@ -78,6 +83,7 @@ export function createFile(doc: Y.Doc, name: string): string {
   const file = new Y.Map<unknown>();
   file.set("name", name);
   file.set("content", new Y.Text());
+  file.set("createdAt", at);
   filesOf(doc).set(id, file);
   return id;
 }

@@ -12,6 +12,7 @@ import {
   restoreFile,
   type TrashedFile,
 } from "./files";
+import { displayNames } from "./fileTree";
 import { languageOf } from "./language";
 import { StatusBar } from "./StatusBar";
 import type { Person, RoomSession } from "./session";
@@ -63,6 +64,7 @@ export function Workspace({ session, files, trash, people, viewOnly }: Props) {
         <div className="flex min-w-0 flex-1 flex-col">
           <FileTabs
             tabs={tabs}
+            names={displayNames(files)}
             activeId={active?.id ?? null}
             onSelect={openFile}
             onClose={closeFile}

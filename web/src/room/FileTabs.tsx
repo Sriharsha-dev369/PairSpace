@@ -4,13 +4,14 @@ import { isTrashed, type RoomFile } from "./files";
 
 interface Props {
   tabs: RoomFile[];
+  names: Map<string, string>; // as the list shows them ("utils (2).js"); a trashed file: its own
   activeId: string | null;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
 }
 
 // the files this person has open, and which one they're looking at
-export function FileTabs({ tabs, activeId, onSelect, onClose }: Props) {
+export function FileTabs({ tabs, names, activeId, onSelect, onClose }: Props) {
   return (
     <div
       role="tablist"
@@ -19,6 +20,7 @@ export function FileTabs({ tabs, activeId, onSelect, onClose }: Props) {
     >
       {tabs.map((file) => {
         const active = file.id === activeId;
+        const shown = names.get(file.id) ?? file.name;
         return (
           <div
             key={file.id}
@@ -30,11 +32,12 @@ export function FileTabs({ tabs, activeId, onSelect, onClose }: Props) {
               role="tab"
               aria-selected={active}
               onClick={() => onSelect(file.id)}
+              title={file.name}
               className="flex h-full items-center gap-2 pr-1.5 pl-3 focus-visible:outline-none"
             >
               <FileBadge name={file.name} />
               <span className={isTrashed(file) ? "text-faint line-through" : undefined}>
-                {file.name}
+                {shown.slice(shown.lastIndexOf("/") + 1)}
               </span>
             </button>
             <button

@@ -69,7 +69,7 @@ export function LandingPage() {
           <div className="mt-12 grid gap-x-10 gap-y-14 sm:grid-cols-2">
             <Feature
               title="See who's where"
-              body="Every cursor carries its owner's name and colour, so you always know who is typing where."
+              body="Every cursor carries its owner's name and colour, and the file list shows who is in which file."
             >
               <pre className="font-mono text-[13px] leading-7 text-muted">
                 <span className="text-[#c792ea]">const</span> total = items.reduce(
@@ -128,7 +128,8 @@ export function LandingPage() {
               Copy the room's link and send it to whoever you're working with.
             </Step>
             <Step n={3} title="Code together">
-              Everyone edits the same file at once. Every change merges and is saved.
+              Everyone edits at once, in one file or across several. Every change merges and is
+              saved.
             </Step>
           </ol>
         </section>
@@ -140,16 +141,13 @@ export function LandingPage() {
           <p className="mt-3 max-w-xl text-muted">
             PairSpace is young. These are being built next.
           </p>
-          <ul className="mt-10 grid gap-x-10 gap-y-6 sm:grid-cols-2">
+          <ul className="mt-10 grid gap-x-10 gap-y-6 md:grid-cols-3">
             <Upcoming title="Run your code">
               Run JavaScript and Python right in the room, with the output shared with everyone.
             </Upcoming>
             <Upcoming title="Replay a session">
               Scrub through how the code was written, keystroke by keystroke, in each person's
               colour.
-            </Upcoming>
-            <Upcoming title="Projects with several files">
-              A file tree and tabs, so a room can hold a whole small project.
             </Upcoming>
             <Upcoming title="Watch the network">
               A live panel with latency and pending changes, and a switch that makes the network bad

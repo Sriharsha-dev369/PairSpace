@@ -4,6 +4,7 @@ import { timeAgo } from "../timeAgo";
 import { NameField } from "../ui/NameField";
 import { FileBadge } from "./FileBadge";
 import { fileNameProblem, type RoomFile, type TrashedFile } from "./files";
+import { fileTree, type TreeNode } from "./fileTree";
 import type { Person } from "./session";
 
 interface Props {
@@ -18,6 +19,25 @@ interface Props {
   onDelete: (file: RoomFile) => void;
   onRestore: (id: string) => void;
 }
+
+// what every row of the tree needs to know and do
+interface Rows {
+  activeId: string | null;
+  people: Person[];
+  canEdit: boolean;
+  renaming: string | null;
+  collapsed: Set<string>; // folder paths
+  toggle: (path: string) => void;
+  open: (id: string) => void;
+  startRename: (id: string) => void;
+  endRename: () => void;
+  rename: (id: string, name: string) => void;
+  remove: (file: RoomFile) => void;
+  namesExcept: (id?: string) => string[];
+}
+
+// folders are indented by depth; a row's own padding comes on top
+const indent = (depth: number, base: number) => ({ paddingLeft: base + depth * 12 });
 
 const ICON_BUTTON =
   "grid h-6 w-6 shrink-0 place-items-center rounded-md text-faint transition hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-accent";
@@ -37,7 +57,30 @@ export function FileList({
 }: Props) {
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(new Set<string>());
   const namesExcept = (id?: string) => files.filter((f) => f.id !== id).map((f) => f.name);
+  const rows: Rows = {
+    activeId,
+    people,
+    canEdit,
+    renaming,
+    collapsed,
+    toggle: (path) =>
+      setCollapsed((before) => {
+        const after = new Set(before);
+        if (!after.delete(path)) after.add(path);
+        return after;
+      }),
+    open: onOpen,
+    startRename: setRenaming,
+    endRename: () => setRenaming(null),
+    rename: (id, name) => {
+      setRenaming(null);
+      onRename(id, name);
+    },
+    remove: onDelete,
+    namesExcept,
+  };
 
   return (
     <aside
@@ -75,43 +118,99 @@ export function FileList({
             />
           </li>
         )}
-        {files.map((file) =>
-          renaming === file.id ? (
-            <li key={file.id} className="px-2 py-1">
-              <NameField
-                initial={file.name}
-                label="File name"
-                maxLength={100}
-                problem={(name) => fileNameProblem(name, namesExcept(file.id))}
-                onSave={(name) => {
-                  setRenaming(null);
-                  onRename(file.id, name);
-                }}
-                onCancel={() => setRenaming(null)}
-                className="h-7 text-xs"
-              />
-            </li>
-          ) : (
-            <FileRow
-              key={file.id}
-              file={file}
-              active={file.id === activeId}
-              here={people.filter((p) => !p.isMe && p.fileId === file.id)}
-              canEdit={canEdit}
-              onOpen={() => onOpen(file.id)}
-              onRename={() => setRenaming(file.id)}
-              onDelete={() => onDelete(file)}
-            />
-          ),
-        )}
+        <Nodes nodes={fileTree(files)} depth={0} rows={rows} />
       </ul>
       {trash.length > 0 && <Trash files={trash} canRestore={canEdit} onRestore={onRestore} />}
     </aside>
   );
 }
 
+function Nodes({ nodes, depth, rows }: { nodes: TreeNode[]; depth: number; rows: Rows }) {
+  return nodes.map((node) =>
+    node.kind === "folder" ? (
+      <FolderRow key={`folder:${node.path}`} folder={node} depth={depth} rows={rows} />
+    ) : (
+      <FileItem key={node.file.id} node={node} depth={depth} rows={rows} />
+    ),
+  );
+}
+
+// a folder exists only in the list: it's the shared start of some files' names
+function FolderRow({
+  folder,
+  depth,
+  rows,
+}: {
+  folder: Extract<TreeNode, { kind: "folder" }>;
+  depth: number;
+  rows: Rows;
+}) {
+  const open = !rows.collapsed.has(folder.path);
+  return (
+    <li>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => rows.toggle(folder.path)}
+        style={indent(depth, 12)}
+        className="flex h-8 w-full items-center gap-1.5 pr-2 text-left text-[13px] text-muted transition hover:bg-raised/50 hover:text-fg"
+      >
+        <ChevronRight size={12} className={`shrink-0 transition ${open ? "rotate-90" : ""}`} />
+        <span className="truncate">{folder.name}</span>
+      </button>
+      {open && (
+        <ul>
+          <Nodes nodes={folder.children} depth={depth + 1} rows={rows} />
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function FileItem({
+  node,
+  depth,
+  rows,
+}: {
+  node: Extract<TreeNode, { kind: "file" }>;
+  depth: number;
+  rows: Rows;
+}) {
+  const { file } = node;
+  if (rows.renaming === file.id) {
+    return (
+      <li className="py-1 pr-2" style={indent(depth, 8)}>
+        <NameField
+          initial={file.name}
+          label="File name"
+          maxLength={100}
+          problem={(name) => fileNameProblem(name, rows.namesExcept(file.id))}
+          onSave={(name) => rows.rename(file.id, name)}
+          onCancel={rows.endRename}
+          className="h-7 text-xs"
+        />
+      </li>
+    );
+  }
+  return (
+    <FileRow
+      file={file}
+      shown={node.name}
+      depth={depth}
+      active={file.id === rows.activeId}
+      here={rows.people.filter((p) => !p.isMe && p.fileId === file.id)}
+      canEdit={rows.canEdit}
+      onOpen={() => rows.open(file.id)}
+      onRename={() => rows.startRename(file.id)}
+      onDelete={() => rows.remove(file)}
+    />
+  );
+}
+
 function FileRow({
   file,
+  shown,
+  depth,
   active,
   here,
   canEdit,
@@ -120,6 +219,8 @@ function FileRow({
   onDelete,
 }: {
   file: RoomFile;
+  shown: string; // its name in the list: without its folders, and "(2)" if it's a duplicate
+  depth: number;
   active: boolean;
   here: Person[]; // everyone else with this file open
   canEdit: boolean;
@@ -130,15 +231,19 @@ function FileRow({
   const onHover = `${ICON_BUTTON} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`;
   return (
     <li
-      className={`group flex h-8 items-center gap-2 pr-2 pl-4 text-[13px] ${active ? "bg-raised text-fg" : "text-muted hover:bg-raised/50 hover:text-fg"}`}
+      style={indent(depth, 16)}
+      className={`group flex h-8 items-center gap-2 pr-2 text-[13px] ${active ? "bg-raised text-fg" : "text-muted hover:bg-raised/50 hover:text-fg"}`}
     >
       <button
         type="button"
         onClick={onOpen}
+        title={file.name}
         className="flex h-full min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none"
       >
         <FileBadge name={file.name} />
-        <span className="truncate">{file.name}</span>
+        <span data-testid="file-name" className="truncate">
+          {shown}
+        </span>
       </button>
       {here.length > 0 && (
         <span className="flex -space-x-0.5">

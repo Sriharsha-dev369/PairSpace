@@ -70,6 +70,40 @@ describe("a room's files", () => {
     expect(listFiles(bob)[0].content.toString()).toBe("console.log(1);");
   });
 
+  it("ends with one name for everyone when two people rename a file at the same moment", () => {
+    const [alice, bob] = twoPeople();
+    const fileId = listFiles(alice)[0].id;
+
+    renameFile(alice, fileId, "alice.js");
+    renameFile(bob, fileId, "bob.js");
+    sync(alice, bob);
+
+    expect(names(alice)).toHaveLength(1);
+    expect(names(alice)).toEqual(names(bob));
+  });
+
+  it("remembers when each file was made; a room's first file counts as oldest", () => {
+    const doc = newRoom();
+    const id = createFile(doc, "utils.js", 5000);
+
+    expect(listFiles(doc).map((file) => [file.name, file.createdAt])).toEqual([
+      ["main.js", 0],
+      ["utils.js", 5000],
+    ]);
+    expect(listFiles(doc).find((file) => file.id === id)?.createdAt).toBe(5000);
+  });
+
+  it("keeps both files when two people make one name at the same moment", () => {
+    const [alice, bob] = twoPeople();
+
+    createFile(alice, "utils.js", 1000);
+    createFile(bob, "utils.js", 2000);
+    sync(alice, bob);
+
+    expect(names(alice)).toEqual(["main.js", "utils.js", "utils.js"]);
+    expect(listFiles(alice).map((file) => file.createdAt)).toEqual([0, 1000, 2000]);
+  });
+
   it("lets a file keep its own name", () => {
     const doc = newRoom();
     const [main] = listFiles(doc);
