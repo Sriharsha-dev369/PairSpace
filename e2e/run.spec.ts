@@ -4,7 +4,9 @@
 import { expect, type Page, test } from "@playwright/test";
 import {
   createRoom,
+  fileList,
   memberBrowser,
+  newFile,
   newRoomUrl,
   openRoomAs,
   shareLink,
@@ -95,6 +97,36 @@ test("an error says what went wrong, and in which file and line", async ({ brows
 
   await expect(output(page)).toContainText("TypeError: nope");
   await expect(output(page)).toContainText("main.js:2");
+});
+
+test("the open file can import the room's other files", async ({ browser }) => {
+  const page = await openRoomAs(browser, await newRoomUrl(browser));
+  await newFile(page, "src/utils.js");
+  await write(
+    page,
+    'export const twice = (n) => n * 2;\nexport const fail = () => { throw new RangeError("too big"); };',
+  );
+  await fileList(page).getByRole("button", { name: "main.js", exact: true }).click();
+
+  await run(
+    page,
+    'import { twice } from "./src/utils.js";\nconsole.log("twice 21 is", twice(21));',
+  );
+  await expect(output(page)).toHaveText("twice 21 is 42");
+
+  // an error in an imported file names that file
+  await run(page, 'import { fail } from "./src/utils";\nfail();');
+  await expect(output(page)).toContainText("RangeError: too big");
+  await expect(output(page)).toContainText("src/utils.js:2");
+});
+
+test("an import that can't be followed says why, without running anything", async ({ browser }) => {
+  const page = await openRoomAs(browser, await newRoomUrl(browser));
+
+  await run(page, 'console.log("ran anyway");\nimport { x } from "./missing.js";');
+
+  await expect(output(page)).toHaveText("Can't find './missing.js', imported by main.js.");
+  await expect(runStatus(page)).toContainText("ended with an error");
 });
 
 test("code that runs can't act as the person who ran it", async ({ browser }) => {

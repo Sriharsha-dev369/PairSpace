@@ -4,21 +4,16 @@
 import { expect, type Page, test } from "@playwright/test";
 import {
   createRoom,
+  fileList,
   memberBrowser,
+  newFile,
   newRoomUrl,
   openRoomAs,
   shareLink,
   twoGuestsIn,
 } from "./members";
 
-const fileList = (page: Page) => page.getByRole("complementary", { name: "Files" });
 const editor = (page: Page) => page.locator(".cm-content");
-
-async function newFile(page: Page, name: string) {
-  await fileList(page).getByRole("button", { name: "New file" }).click();
-  await page.getByLabel("File name").fill(name);
-  await page.getByLabel("File name").press("Enter");
-}
 
 async function rename(page: Page, from: string, to: string) {
   await fileList(page)

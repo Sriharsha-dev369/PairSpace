@@ -1,5 +1,6 @@
 import type * as Y from "yjs";
 import type { RoomFile } from "../room/files";
+import { javascriptModules } from "./modules";
 import {
   addOutput,
   type Chunk,
@@ -48,7 +49,18 @@ export function createRunner({
 }: Options) {
   let stopMine: (() => void) | undefined;
 
-  function run(file: RoomFile): boolean {
+  // the program the sandbox gets: the open file, and the room files it imports
+  async function prepare(language: Language, file: RoomFile, files: RoomFile[]): Promise<Job> {
+    const sources = files.map((each) => ({ name: each.name, source: each.content.toString() }));
+    return {
+      language,
+      modules: await javascriptModules(sources, file.name),
+      entry: file.name,
+      timeLimitMs,
+    };
+  }
+
+  function run(file: RoomFile, files: RoomFile[]): boolean {
     const language = runnableAs(file.name);
     const last = currentRun(doc);
     if (!language || (last && runStatus(last, present()) === "running")) return false;
@@ -57,40 +69,44 @@ export function createRunner({
     const runs = doc.getMap("run");
     let pending: Chunk[] = [];
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let finished = false;
     const flush = () => {
       clearTimeout(timer);
       timer = undefined;
       if (pending.length > 0) addOutput(doc, id, pending);
       pending = [];
     };
+    const finish = (end: Extract<SandboxEvent, { type: "end" }>) => {
+      if (finished) return;
+      finished = true;
+      runs.unobserveDeep(watch);
+      stopMine = undefined;
+      flush();
+      endRun(doc, id, { status: end.outcome, error: end.error });
+    };
     // someone asked to stop, or a run started at the same moment took this one's place
-    const watch = () => {
+    function watch() {
       const now = currentRun(doc);
       if (now?.id !== id || now.stopRequestedBy) stopMine?.();
+    }
+    const onEvent = (event: SandboxEvent) => {
+      if (event.type === "output") {
+        if (pending.length < MAX_OUTPUT_LINES)
+          pending.push({ stream: event.stream, text: event.text });
+        timer ??= setTimeout(flush, batchMs);
+      }
+      if (event.type === "end") finish(event);
     };
 
-    stopMine = sandbox(
-      {
-        language,
-        modules: [{ path: file.name, source: file.content.toString(), imports: [] }],
-        entry: file.name,
-        timeLimitMs,
-      },
-      (event) => {
-        if (event.type === "output") {
-          if (pending.length < MAX_OUTPUT_LINES)
-            pending.push({ stream: event.stream, text: event.text });
-          timer ??= setTimeout(flush, batchMs);
-        }
-        if (event.type === "end") {
-          runs.unobserveDeep(watch);
-          stopMine = undefined;
-          flush();
-          endRun(doc, id, { status: event.outcome, error: event.error });
-        }
-      },
-    );
+    // until the program reaches the sandbox, stopping just ends the run
+    stopMine = () => finish({ type: "end", outcome: "stopped" });
     runs.observeDeep(watch);
+    prepare(language, file, files).then(
+      (job) => {
+        if (!finished) stopMine = sandbox(job, onEvent);
+      },
+      (error: Error) => finish({ type: "end", outcome: "failed", error: error.message }),
+    );
     return true;
   }
 

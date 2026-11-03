@@ -83,7 +83,7 @@ export function Workspace({ session, files, trash, people, viewOnly }: Props) {
                 <RunControl
                   file={active}
                   busy={runShows === "running"}
-                  onRun={() => active && runner.run(active)}
+                  onRun={() => active && runner.run(active, files)}
                   onStop={() => run && requestStop(session.doc, run.id, session.me.name)}
                 />
               </div>

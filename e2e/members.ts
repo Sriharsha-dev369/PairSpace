@@ -71,3 +71,12 @@ export async function twoGuestsIn(browser: Browser): Promise<[Page, Page]> {
   const url = await newRoomUrl(browser);
   return [await openRoomAs(browser, url), await openRoomAs(browser, url)];
 }
+
+export const fileList = (page: Page) => page.getByRole("complementary", { name: "Files" });
+
+// a new file in the room, named in the file list; it opens, ready to type in
+export async function newFile(page: Page, name: string) {
+  await fileList(page).getByRole("button", { name: "New file" }).click();
+  await page.getByLabel("File name").fill(name);
+  await page.getByLabel("File name").press("Enter");
+}
