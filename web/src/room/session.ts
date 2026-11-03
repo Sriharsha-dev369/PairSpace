@@ -2,6 +2,7 @@ import type { Awareness } from "y-protocols/awareness";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 import { NETWORKS, type Network, simulatedLink } from "../inspector/link";
+import type { MessageLog } from "../inspector/messages";
 import { type SyncProbe, watchSync } from "../inspector/probe";
 import { listFiles, listTrash, type RoomFile, type TrashedFile } from "./files";
 
@@ -42,6 +43,8 @@ export interface Person extends User {
 export interface SessionSync extends Pick<SyncProbe, "stats" | "subscribe"> {
   network(): Network;
   setNetwork(network: Network): void;
+  messages(): MessageLog;
+  watchMessages(listener: () => void): () => void; // apart from subscribe: it fires on every message
 }
 
 export interface RoomSession {
@@ -242,6 +245,8 @@ export function joinRoom({
       },
       network: simulated.network,
       setNetwork: simulated.set,
+      messages: simulated.messages,
+      watchMessages: simulated.watchMessages,
     },
     leave: () => {
       probe.stop();

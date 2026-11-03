@@ -92,3 +92,30 @@ test("offline in the sync inspector, then back: what both people wrote meets", a
   }
   expect(await typedIn(alice)).toBe(await typedIn(bob));
 });
+
+test("the sync inspector logs what goes out and comes in, and graphs the round trip", async ({
+  browser,
+}) => {
+  const page = await openRoomAs(browser, await newRoomUrl(browser));
+  await openInspector(page);
+  await page.locator(".cm-content").click();
+  await page.keyboard.type("x");
+
+  const panel = inspector(page);
+  const messages = panel.getByRole("list", { name: "Messages" }).getByRole("listitem");
+  await expect(
+    messages.filter({ hasText: "Sent" }).filter({ hasText: "Change" }).first(),
+  ).toBeVisible();
+  await expect(
+    messages
+      .filter({ hasText: "Received" })
+      .filter({ hasText: /Pong \d+/ })
+      .first(),
+  ).toBeVisible();
+  await expect(panel.getByTestId("messages-total")).toHaveText(
+    /^Sent \d+ \(.+\), received \d+ \(.+\)$/,
+  );
+  await expect(
+    panel.getByRole("img", { name: /^Round trip over the last minute: latest/ }),
+  ).toBeVisible();
+});

@@ -12,7 +12,7 @@ export interface Client {
   provider: WebsocketProvider;
 }
 
-export function useSyncServer() {
+export function useSyncServer({ heartbeatMs }: { heartbeatMs?: number } = {}) {
   let server: SyncServer;
   let cleanups: (() => void)[] = [];
   let admitMs = 0;
@@ -22,6 +22,7 @@ export function useSyncServer() {
     // everyone gets in as a guest editor, after admitMs (in the app: checking who they are)
     server = await createSyncServer({
       port: 0,
+      heartbeatMs,
       admit: async () => {
         if (admitMs > 0) await sleep(admitMs);
         return { member: null, role: "editor" };

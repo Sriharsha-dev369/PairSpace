@@ -5,6 +5,8 @@ import { STATUS } from "../room/connectionStatus";
 import type { ConnectionStatus, SessionSync } from "../room/session";
 import { timeAgo } from "../timeAgo";
 import { NETWORKS, type Network, SHAPES } from "./link";
+import { MessageList } from "./MessageList";
+import { RoundTripChart } from "./RoundTripChart";
 import { useNow, useSync } from "./useSync";
 
 const NAMES: Record<Network, string> = {
@@ -204,7 +206,9 @@ export function SyncInspector({
           {since(lastConfirmedAt, now)}
         </Reading>
       </dl>
+      <RoundTripChart trips={roundTrips} now={now} />
       <NetworkChoice network={network} onChoose={sync.setNetwork} />
+      <MessageList sync={sync} />
     </aside>
   );
 }

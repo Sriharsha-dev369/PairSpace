@@ -6,6 +6,8 @@
 // direction is one queue, and an open, message or close never overtakes the one ahead of it.
 // Offline isn't done here: the room session disconnects, exactly as when wifi goes.
 
+import { type MessageLog, messageLog } from "./messages";
+
 export type Network = "normal" | "slow" | "very-slow" | "flaky" | "offline";
 
 export const NETWORKS: readonly Network[] = ["normal", "slow", "very-slow", "flaky", "offline"];
@@ -30,7 +32,9 @@ export interface SimulatedLink {
   WebSocket: typeof WebSocket; // for y-websocket's WebSocketPolyfill
   network(): Network;
   set(network: Network): void;
-  subscribe(listener: () => void): () => void;
+  subscribe(listener: () => void): () => void; // a change of network
+  messages(): MessageLog; // what crossed it, either way (sent when the app sent it, received when delivered)
+  watchMessages(listener: () => void): () => void;
   stop(): void; // no more drops (a flaky link's timer would otherwise run on)
 }
 
@@ -73,6 +77,7 @@ export function simulatedLink({
   const delay = () => shape().delayMs + Math.random() * shape().jitterMs;
   const open = new Set<WebSocket>(); // the real sockets, to drop
   const listeners = new Set<() => void>();
+  const log = messageLog();
 
   // while flaky, drop every open connection after a while, again and again
   let drops: ReturnType<typeof setTimeout> | undefined;
@@ -112,7 +117,11 @@ export function simulatedLink({
       socket.binaryType = "arraybuffer";
       const arrive = lane(delay);
       socket.onopen = (event) => arrive(() => this.onopen?.(event));
-      socket.onmessage = (event) => arrive(() => this.onmessage?.(event));
+      socket.onmessage = (event) =>
+        arrive(() => {
+          log.record("in", event.data);
+          this.onmessage?.(event);
+        });
       socket.onerror = (event) => arrive(() => this.onerror?.(event));
       socket.onclose = (event) => {
         open.delete(socket);
@@ -127,6 +136,7 @@ export function simulatedLink({
     }
 
     send(data: Uint8Array<ArrayBuffer> | ArrayBuffer | string) {
+      log.record("out", data);
       // a message still on its way when the connection drops is lost with it, as on a real one
       this.#out(() => this.#socket.readyState === this.OPEN && this.#socket.send(data));
     }
@@ -148,6 +158,8 @@ export function simulatedLink({
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    messages: log.snapshot,
+    watchMessages: log.subscribe,
     stop: () => clearTimeout(drops),
   };
 }
