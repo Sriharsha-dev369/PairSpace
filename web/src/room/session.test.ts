@@ -3,7 +3,7 @@
 
 import { createSyncServer, type SyncServer } from "pairspace-server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createFile, renameFile } from "./files";
+import { createFile, deleteFile, renameFile, restoreFile } from "./files";
 import { joinRoom, type RoomSession, type User } from "./session";
 
 const alice: User = { id: "alice", name: "Alice", color: "#f472b6" };
@@ -275,7 +275,7 @@ describe("room session", () => {
     expect(tab.people()).toHaveLength(2);
   });
 
-  it("tells the UI when a file is added or renamed, but not on every keystroke", async () => {
+  it("tells the UI when a file is added, renamed, deleted or restored, not on every keystroke", async () => {
     const session = join();
     await session.synced;
     let notified = 0;
@@ -290,6 +290,12 @@ describe("room session", () => {
     renameFile(session.doc, id, "helpers.js");
     expect(notified).toBe(2);
     expect(session.files().map((f) => f.name)).toEqual(["helpers.js", "main.js"]);
+    deleteFile(session.doc, id, "Alice");
+    expect(notified).toBe(3);
+    expect(session.trash().map((f) => f.name)).toEqual(["helpers.js"]);
+    restoreFile(session.doc, id);
+    expect(notified).toBe(4);
+    expect(session.trash()).toEqual([]);
   });
 
   it("says which file each person has open", async () => {

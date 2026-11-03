@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { RoomFile } from "./files";
+import type { RoomFile, TrashedFile } from "./files";
 import type { RoomSession } from "./session";
 
 interface Open {
@@ -8,14 +8,16 @@ interface Open {
 }
 
 // the files this person has open as tabs, and the one they're in. Theirs alone, except that
-// everyone else is shown which file they're in. Starts with the first file open
-export function useOpenFiles(session: RoomSession, files: RoomFile[]) {
+// everyone else is shown which file they're in. Starts with the first file open. A tab stays open
+// when its file is deleted, so whoever is in it sees what happened
+export function useOpenFiles(session: RoomSession, files: RoomFile[], trash: TrashedFile[]) {
   const [open, setOpen] = useState<Open>(() => {
     const first = files[0]?.id;
     return { ids: first ? [first] : [], active: first ?? null };
   });
-  const tabs = open.ids.flatMap((id) => files.filter((file) => file.id === id));
-  const active = files.find((file) => file.id === open.active) ?? null;
+  const all = [...files, ...trash];
+  const tabs = open.ids.flatMap((id) => all.filter((file) => file.id === id));
+  const active = all.find((file) => file.id === open.active) ?? null;
 
   const activeId = active?.id ?? null;
   useEffect(() => session.setOpenFile(activeId), [session, activeId]);

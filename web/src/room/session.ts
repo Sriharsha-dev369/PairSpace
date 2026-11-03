@@ -1,7 +1,7 @@
 import type { Awareness } from "y-protocols/awareness";
 import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
-import { listFiles, type RoomFile } from "./files";
+import { listFiles, listTrash, type RoomFile, type TrashedFile } from "./files";
 
 // reconnecting: we were connected and the provider is retrying on its own
 // offline: the browser says there's no network, so we stopped trying until it's back
@@ -36,6 +36,7 @@ export interface Person extends User {
 }
 
 export interface RoomSession {
+  me: User;
   doc: Y.Doc;
   awareness: Awareness;
   synced: Promise<void>; // resolves once the server's copy arrives; rejects with RoomRefused
@@ -44,6 +45,7 @@ export interface RoomSession {
   subscribe(listener: () => void): () => void; // called when status, people or files may have changed
   people(): Person[];
   files(): RoomFile[]; // by name
+  trash(): TrashedFile[]; // deleted files, newest first
   setOpenFile(id: string | null): void; // shows everyone which file I'm in
   leave(): void;
 }
@@ -155,6 +157,7 @@ export function joinRoom({
   synced.catch(() => {}); // a caller that never awaits synced shouldn't see an unhandled rejection
 
   return {
+    me: user,
     doc,
     awareness,
     synced,
@@ -187,6 +190,7 @@ export function joinRoom({
     },
     unsyncedEdits: () => unsynced,
     files: () => listFiles(doc),
+    trash: () => listTrash(doc),
     setOpenFile: (id) => awareness.setLocalStateField("file", id),
     leave: () => {
       networkEvents?.removeEventListener("offline", goOffline);

@@ -3,7 +3,15 @@
 
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { createFile, fileNameProblem, listFiles, renameFile } from "./files";
+import {
+  createFile,
+  deleteFile,
+  fileNameProblem,
+  listFiles,
+  listTrash,
+  renameFile,
+  restoreFile,
+} from "./files";
 
 // a room as the server makes it: one empty main.js
 function newRoom(): Y.Doc {
@@ -76,6 +84,97 @@ describe("a room's files", () => {
     expect(() => createFile(doc, "main.js")).toThrow("already a file");
     expect(() => renameFile(doc, main.id, "../main.js")).toThrow();
     expect(names(doc)).toEqual(["main.js"]);
+  });
+});
+
+describe("the trash", () => {
+  it("takes a deleted file out of the list for everyone, and keeps it, contents and all", () => {
+    const [alice, bob] = twoPeople();
+    const [main] = listFiles(alice);
+    main.content.insert(0, "keep me");
+
+    deleteFile(alice, main.id, "Alice");
+    sync(alice, bob);
+
+    expect(names(bob)).toEqual([]);
+    const [trashed] = listTrash(bob);
+    expect(trashed).toMatchObject({ id: main.id, name: "main.js", deletedBy: "Alice" });
+    expect(trashed.content.toString()).toBe("keep me");
+  });
+
+  it("lists the trash newest first", () => {
+    const doc = newRoom();
+    const first = createFile(doc, "a.js");
+    const second = createFile(doc, "b.js");
+
+    deleteFile(doc, first, "Alice", 1000);
+    deleteFile(doc, second, "Alice", 2000);
+
+    expect(listTrash(doc).map((file) => file.name)).toEqual(["b.js", "a.js"]);
+  });
+
+  it("brings a restored file back for everyone", () => {
+    const [alice, bob] = twoPeople();
+    const [main] = listFiles(alice);
+    deleteFile(alice, main.id, "Alice");
+    sync(alice, bob);
+
+    restoreFile(bob, main.id);
+    sync(alice, bob);
+
+    expect(names(alice)).toEqual(["main.js"]);
+    expect(listTrash(alice)).toEqual([]);
+  });
+
+  it("frees a deleted file's name for a new file", () => {
+    const doc = newRoom();
+    deleteFile(doc, listFiles(doc)[0].id, "Alice");
+
+    expect(() => createFile(doc, "main.js")).not.toThrow();
+  });
+
+  // M6's done-when: one person deletes a file while another is typing in it
+  it("keeps what someone typed into a file at the moment it was deleted, and it comes back with it", () => {
+    const [alice, bob] = twoPeople();
+    const fileId = listFiles(alice)[0].id;
+
+    // at the same moment, before either hears of the other: alice deletes, bob types
+    deleteFile(alice, fileId, "Alice");
+    listFiles(bob)[0].content.insert(0, "bob's work");
+    sync(alice, bob);
+
+    expect(names(alice)).toEqual([]);
+    expect(names(bob)).toEqual([]);
+    expect(listTrash(alice)[0].content.toString()).toBe("bob's work");
+    restoreFile(alice, fileId);
+    sync(alice, bob);
+    expect(listFiles(bob)[0].content.toString()).toBe("bob's work");
+  });
+
+  it("puts a file renamed at the moment it was deleted in the trash under its new name", () => {
+    const [alice, bob] = twoPeople();
+    const fileId = listFiles(alice)[0].id;
+
+    deleteFile(alice, fileId, "Alice");
+    renameFile(bob, fileId, "index.js");
+    sync(alice, bob);
+
+    expect(listTrash(alice).map((file) => file.name)).toEqual(["index.js"]);
+    expect(listTrash(bob).map((file) => file.name)).toEqual(["index.js"]);
+  });
+
+  it("ends the same for everyone when one person restores a file as another deletes it", () => {
+    const [alice, bob] = twoPeople();
+    const fileId = createFile(alice, "utils.js");
+    deleteFile(alice, fileId, "Alice");
+    sync(alice, bob);
+
+    restoreFile(alice, fileId);
+    deleteFile(bob, fileId, "Bob");
+    sync(alice, bob);
+
+    expect(names(alice)).toEqual(names(bob));
+    expect(listTrash(alice).map((file) => file.id)).toEqual(listTrash(bob).map((file) => file.id));
   });
 });
 

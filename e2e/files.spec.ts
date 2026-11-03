@@ -75,6 +75,47 @@ test("a file name that can't be used is refused, with the reason", async ({ brow
   await expect(fileList(page).getByRole("listitem")).toHaveCount(1);
 });
 
+// M6's done-when, as people see it
+test("someone deletes the file you're typing in: you're told who, can restore it, and lose nothing", async ({
+  browser,
+}) => {
+  const [alice, bob] = await twoGuestsIn(browser);
+  const aliceName = await alice.getByTestId("my-name").innerText();
+  await editor(bob).click();
+  await bob.keyboard.type("bob's work");
+  await expect(editor(alice)).toContainText("bob's work");
+
+  await fileList(alice).getByRole("button", { name: "Delete main.js" }).click();
+
+  await expect(bob.getByText(`${aliceName} deleted this file`)).toBeVisible();
+  await editor(bob).click();
+  await bob.keyboard.type(" more"); // paused until it's restored
+  await bob.getByRole("button", { name: "Restore", exact: true }).click();
+  await fileList(alice).getByRole("button", { name: "main.js", exact: true }).click();
+  await expect(editor(alice)).toContainText("bob's work");
+  await expect(editor(alice)).not.toContainText("more"); // typed before Restore, so it'd be here
+});
+
+test("a deleted file waits in the trash: Undo brings it back, and so can anyone else", async ({
+  browser,
+}) => {
+  const [alice, bob] = await twoGuestsIn(browser);
+  await newFile(alice, "utils.js");
+
+  await fileList(alice).getByRole("button", { name: "Delete utils.js" }).click();
+  await expect(alice.getByRole("tab", { name: "utils.js" })).toHaveCount(0); // its tab closes
+  await expect(fileList(bob).getByRole("button", { name: "utils.js", exact: true })).toHaveCount(0);
+  await alice.getByRole("button", { name: "Undo" }).click();
+  await expect(fileList(bob).getByRole("button", { name: "utils.js", exact: true })).toBeVisible();
+
+  await fileList(alice).getByRole("button", { name: "Delete utils.js" }).click();
+  await fileList(bob).getByRole("button", { name: "Trash (1)" }).click();
+  await fileList(bob).getByRole("button", { name: "Restore utils.js" }).click();
+  await expect(
+    fileList(alice).getByRole("button", { name: "utils.js", exact: true }),
+  ).toBeVisible();
+});
+
 test("closing a file takes your cursor out of it for everyone", async ({ browser }) => {
   const [alice, bob] = await twoGuestsIn(browser);
   await editor(alice).click();
@@ -86,7 +127,7 @@ test("closing a file takes your cursor out of it for everyone", async ({ browser
   await expect(bob.locator(".cm-ySelectionInfo")).toHaveCount(0);
 });
 
-test("someone with a view-only link opens files, but can't create or rename them", async ({
+test("someone with a view-only link opens files, but can't create, rename, delete or restore them", async ({
   browser,
 }) => {
   const owner = await memberBrowser(browser);
@@ -101,4 +142,11 @@ test("someone with a view-only link opens files, but can't create or rename them
   await expect(viewer.getByTestId("language")).toHaveText("Markdown");
   await expect(fileList(viewer).getByRole("button", { name: "New file" })).toHaveCount(0);
   await expect(fileList(viewer).getByRole("button", { name: /^Rename/ })).toHaveCount(0);
+  await expect(fileList(viewer).getByRole("button", { name: /^Delete/ })).toHaveCount(0);
+
+  // nor restore one: not from the notice in the file, nor from the trash
+  await fileList(ownerPage).getByRole("button", { name: "Delete notes.md" }).click();
+  await expect(viewer.getByText("deleted this file")).toBeVisible();
+  await fileList(viewer).getByRole("button", { name: "Trash (1)" }).click();
+  await expect(viewer.getByRole("button", { name: /^Restore/ })).toHaveCount(0);
 });

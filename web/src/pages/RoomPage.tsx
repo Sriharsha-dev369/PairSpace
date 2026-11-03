@@ -4,18 +4,12 @@ import { useEffect, useMemo } from "react";
 import { useBlocker, useParams, useSearchParams } from "react-router";
 import { api, type Role } from "../api";
 import { type Member, useMember } from "../auth/useMember";
-import { Editor } from "../room/Editor";
-import { FileList } from "../room/FileList";
-import { FileTabs } from "../room/FileTabs";
-import { createFile, renameFile } from "../room/files";
 import { guestIdentity, memberIdentity } from "../room/identity";
-import { languageOf } from "../room/language";
 import { RoomHeader } from "../room/RoomHeader";
-import { StatusBar } from "../room/StatusBar";
 import { NO_ACCESS, ROOM_NOT_FOUND, type RoomSession } from "../room/session";
-import { useOpenFiles } from "../room/useOpenFiles";
 import { useRoomSession } from "../room/useRoomSession";
 import { useRoomState } from "../room/useRoomState";
+import { Workspace } from "../room/Workspace";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { FullScreen } from "../ui/FullScreen";
 import { LogoMark } from "../ui/Logo";
@@ -73,8 +67,7 @@ function Room({
   isMember: boolean;
   link?: string;
 }) {
-  const { status, people, unsyncedEdits, files } = useRoomState(session);
-  const { tabs, active, openFile, closeFile } = useOpenFiles(session, files);
+  const { status, people, unsyncedEdits, files, trash } = useRoomState(session);
   // its title, and whether I'm its owner (who shares it)
   const info = useQuery({
     queryKey: ["room", roomId, link],
@@ -138,39 +131,12 @@ function Room({
         unsyncedEdits={unsyncedEdits}
         isMember={isMember}
       />
-      <div className="flex min-h-0 flex-1">
-        <FileList
-          files={files}
-          activeId={active?.id ?? null}
-          people={people}
-          canEdit={!viewOnly}
-          onOpen={openFile}
-          onCreate={(name) => openFile(createFile(session.doc, name))}
-          onRename={(id, name) => renameFile(session.doc, id, name)}
-        />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <FileTabs
-            tabs={tabs}
-            activeId={active?.id ?? null}
-            onSelect={openFile}
-            onClose={closeFile}
-          />
-          <main className="min-h-0 flex-1">
-            {active ? (
-              <Editor file={active} awareness={session.awareness} readOnly={viewOnly} autoFocus />
-            ) : (
-              <p className="grid h-full place-items-center text-sm text-faint">
-                {viewOnly
-                  ? "Open a file from the list."
-                  : "Open a file from the list, or make a new one."}
-              </p>
-            )}
-          </main>
-        </div>
-      </div>
-      <StatusBar
-        peopleCount={people.length}
-        language={active ? (languageOf(active.name)?.name ?? "Plain text") : undefined}
+      <Workspace
+        session={session}
+        files={files}
+        trash={trash}
+        people={people}
+        viewOnly={viewOnly}
       />
       <ConfirmDialog
         open={leaving.state === "blocked"}

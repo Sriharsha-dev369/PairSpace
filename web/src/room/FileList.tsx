@@ -1,25 +1,40 @@
-import { Pencil, Plus } from "lucide-react";
+import { ChevronRight, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { timeAgo } from "../timeAgo";
 import { NameField } from "../ui/NameField";
 import { FileBadge } from "./FileBadge";
-import { fileNameProblem, type RoomFile } from "./files";
+import { fileNameProblem, type RoomFile, type TrashedFile } from "./files";
 import type { Person } from "./session";
 
 interface Props {
   files: RoomFile[];
+  trash: TrashedFile[];
   activeId: string | null;
   people: Person[];
-  canEdit: boolean; // viewers open files, but don't create or rename them
+  canEdit: boolean; // viewers open files, but don't create, rename, delete or restore them
   onOpen: (id: string) => void;
   onCreate: (name: string) => void;
   onRename: (id: string, name: string) => void;
+  onDelete: (file: RoomFile) => void;
+  onRestore: (id: string) => void;
 }
 
 const ICON_BUTTON =
   "grid h-6 w-6 shrink-0 place-items-center rounded-md text-faint transition hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-accent";
 
 // the room's files, and who is in which
-export function FileList({ files, activeId, people, canEdit, onOpen, onCreate, onRename }: Props) {
+export function FileList({
+  files,
+  trash,
+  activeId,
+  people,
+  canEdit,
+  onOpen,
+  onCreate,
+  onRename,
+  onDelete,
+  onRestore,
+}: Props) {
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const namesExcept = (id?: string) => files.filter((f) => f.id !== id).map((f) => f.name);
@@ -85,10 +100,12 @@ export function FileList({ files, activeId, people, canEdit, onOpen, onCreate, o
               canEdit={canEdit}
               onOpen={() => onOpen(file.id)}
               onRename={() => setRenaming(file.id)}
+              onDelete={() => onDelete(file)}
             />
           ),
         )}
       </ul>
+      {trash.length > 0 && <Trash files={trash} canRestore={canEdit} onRestore={onRestore} />}
     </aside>
   );
 }
@@ -100,6 +117,7 @@ function FileRow({
   canEdit,
   onOpen,
   onRename,
+  onDelete,
 }: {
   file: RoomFile;
   active: boolean;
@@ -107,7 +125,9 @@ function FileRow({
   canEdit: boolean;
   onOpen: () => void;
   onRename: () => void;
+  onDelete: () => void;
 }) {
+  const onHover = `${ICON_BUTTON} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`;
   return (
     <li
       className={`group flex h-8 items-center gap-2 pr-2 pl-4 text-[13px] ${active ? "bg-raised text-fg" : "text-muted hover:bg-raised/50 hover:text-fg"}`}
@@ -135,16 +155,79 @@ function FileRow({
         </span>
       )}
       {canEdit && (
-        <button
-          type="button"
-          aria-label={`Rename ${file.name}`}
-          title="Rename"
-          onClick={onRename}
-          className={`${ICON_BUTTON} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`}
-        >
-          <Pencil size={12} />
-        </button>
+        <>
+          <button
+            type="button"
+            aria-label={`Rename ${file.name}`}
+            title="Rename"
+            onClick={onRename}
+            className={onHover}
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            type="button"
+            aria-label={`Delete ${file.name}`}
+            title="Delete (it goes to the trash)"
+            onClick={onDelete}
+            className={`${onHover} hover:text-red-300`}
+          >
+            <Trash2 size={12} />
+          </button>
+        </>
       )}
     </li>
+  );
+}
+
+// deleted files, which anyone who can edit brings back
+function Trash({
+  files,
+  canRestore,
+  onRestore,
+}: {
+  files: TrashedFile[];
+  canRestore: boolean;
+  onRestore: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="shrink-0 border-t border-line">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex h-9 w-full items-center gap-1.5 px-4 text-xs font-semibold text-muted transition hover:text-fg"
+      >
+        <ChevronRight size={12} className={`transition ${open ? "rotate-90" : ""}`} />
+        Trash ({files.length})
+      </button>
+      {open && (
+        <ul className="max-h-56 overflow-y-auto pb-2">
+          {files.map((file) => (
+            <li key={file.id} className="flex items-center gap-2 py-1 pr-2 pl-4 text-[13px]">
+              <FileBadge name={file.name} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-muted">{file.name}</span>
+                <span className="block truncate text-[11px] text-faint">
+                  Deleted {timeAgo(file.deletedAt)} by {file.deletedBy}
+                </span>
+              </span>
+              {canRestore && (
+                <button
+                  type="button"
+                  aria-label={`Restore ${file.name}`}
+                  title="Restore"
+                  onClick={() => onRestore(file.id)}
+                  className={ICON_BUTTON}
+                >
+                  <RotateCcw size={12} />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

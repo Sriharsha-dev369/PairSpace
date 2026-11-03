@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { FileBadge } from "./FileBadge";
-import type { RoomFile } from "./files";
+import { isTrashed, type RoomFile } from "./files";
 
 interface Props {
   tabs: RoomFile[];
@@ -33,7 +33,9 @@ export function FileTabs({ tabs, activeId, onSelect, onClose }: Props) {
               className="flex h-full items-center gap-2 pr-1.5 pl-3 focus-visible:outline-none"
             >
               <FileBadge name={file.name} />
-              {file.name}
+              <span className={isTrashed(file) ? "text-faint line-through" : undefined}>
+                {file.name}
+              </span>
             </button>
             <button
               type="button"

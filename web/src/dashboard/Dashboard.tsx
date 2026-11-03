@@ -6,11 +6,11 @@ import { toast } from "sonner";
 import { api, type Role } from "../api";
 import { SignOutButton } from "../auth/SignOutButton";
 import type { Member } from "../auth/useMember";
+import { timeAgo } from "../timeAgo";
 import { Badge } from "../ui/Badge";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Logo } from "../ui/Logo";
 import { NameField } from "../ui/NameField";
-import { timeAgo } from "./timeAgo";
 
 interface RoomSummary {
   id: string;
