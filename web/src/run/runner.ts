@@ -8,6 +8,7 @@ import {
   endRun,
   type Language,
   MAX_OUTPUT_LINES,
+  markStarted,
   runStatus,
   startRun,
 } from "./runState";
@@ -18,7 +19,7 @@ export type Sandbox = (job: Job, onEvent: (event: SandboxEvent) => void) => () =
 // how long a program may run before it's stopped (an endless loop, say)
 const TIME_LIMIT_MS = 10_000;
 
-const LANGUAGES: Record<string, Language> = { js: "javascript", mjs: "javascript" };
+const LANGUAGES: Record<string, Language> = { js: "javascript", mjs: "javascript", py: "python" };
 
 // the language a file runs as, from its name; null if it doesn't run
 export function runnableAs(name: string): Language | null {
@@ -54,7 +55,13 @@ export function createRunner({
     const sources = files.map((each) => ({ name: each.name, source: each.content.toString() }));
     return {
       language,
-      modules: await javascriptModules(sources, file.name),
+      // Python finds its imports itself, among every Python file in the room
+      modules:
+        language === "python"
+          ? sources
+              .filter((each) => runnableAs(each.name) === "python")
+              .map(({ name, source }) => ({ path: name, source, imports: [] }))
+          : await javascriptModules(sources, file.name),
       entry: file.name,
       timeLimitMs,
     };
@@ -95,6 +102,7 @@ export function createRunner({
           pending.push({ stream: event.stream, text: event.text });
         timer ??= setTimeout(flush, batchMs);
       }
+      if (event.type === "started") markStarted(doc, id);
       if (event.type === "end") finish(event);
     };
 

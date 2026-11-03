@@ -1,12 +1,14 @@
 // @ts-check
 // Runs one program for the sandbox page (frame.js) and reports what it prints, then how it ended.
+// A module worker (Pyodide needs one): the room page sends this file's text with each run, and
+// the frame starts it from a data: URL, since its opaque origin can't load modules from us.
 // Messages out: { type: "started" }, { type: "output", stream: "out" | "err", text },
 // { type: "end", outcome: "done" | "failed", error? }.
 
 /**
- * A room file as JavaScript: its imports' positions, to point them at the other modules here.
+ * A room file; as JavaScript, with its imports' positions, to point them at the other modules here.
  * @typedef {{ path: string, source: string, imports: { start: number, end: number, path: string }[] }} Module
- * @typedef {{ language: "javascript", modules: Module[], entry: string }} Job
+ * @typedef {{ language: "javascript" | "python", modules: Module[], entry: string }} Job
  */
 
 /** @param {unknown} message */
@@ -124,11 +126,67 @@ self.addEventListener("unhandledrejection", (event) => {
   });
 });
 
-self.onmessage = async (/** @type {MessageEvent<Job>} */ event) => {
-  const { modules, entry } = event.data;
+// Python: Pyodide (CPython compiled to WebAssembly), from its CDN, which allows any origin to
+// load it (this one is opaque). Pinned: a new version is a deliberate change
+const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
+const ROOM = "/home/pyodide/room"; // the room's files, so `import utils` finds utils.py
+
+/** @param {string} traceback Python's, trimmed to the room's own files */
+function describePython(traceback) {
+  const lines = traceback.trimEnd().split("\n");
+  const kept = [];
+  for (let at = 0; at < lines.length; at++) {
+    const line = lines[at];
+    if (!line.startsWith("  File ")) {
+      if (!line.startsWith("    ")) kept.push(line); // the header and the error itself
+    } else if (line.includes(`"${ROOM}/`)) {
+      kept.push(line.replace(`${ROOM}/`, ""));
+      if (lines[at + 1]?.startsWith("    ")) kept.push(lines[at + 1]); // the line of code
+    }
+  }
+  return kept.join("\n");
+}
+
+/** @param {Module[]} files every Python file in the room @param {string} entry */
+async function runPython(files, entry) {
+  const { loadPyodide } = await import(/* @vite-ignore */ `${PYODIDE}pyodide.mjs`);
+  const pyodide = await loadPyodide({ indexURL: PYODIDE });
+  pyodide.setStdout({
+    batched: (/** @type {string} */ line) =>
+      post({ type: "output", stream: "out", text: `${line}\n` }),
+  });
+  pyodide.setStderr({
+    batched: (/** @type {string} */ line) =>
+      post({ type: "output", stream: "err", text: `${line}\n` }),
+  });
+  pyodide.setStdin({ error: true }); // reading input isn't supported yet: it raises, not waits
+  pyodide.runPython(
+    'import builtins\ndef _input(prompt=""):\n    raise RuntimeError("input() isn\'t supported yet: put the value in the code")\nbuiltins.input = _input',
+  );
+  for (const file of files) {
+    const path = `${ROOM}/${file.path}`;
+    pyodide.FS.mkdirTree(path.slice(0, path.lastIndexOf("/")));
+    pyodide.FS.writeFile(path, file.source);
+  }
+  pyodide.FS.chdir(ROOM);
+  post({ type: "started" });
   try {
-    await runJavaScript(modules, entry);
+    await pyodide.runPythonAsync(
+      `import runpy, sys\nsys.path.insert(0, ${JSON.stringify(ROOM)})\nrunpy.run_path(${JSON.stringify(`${ROOM}/${entry}`)}, run_name="__main__")`,
+    );
   } catch (error) {
-    post({ type: "end", outcome: "failed", error: describe(error) });
+    throw new Error(describePython(error instanceof Error ? error.message : String(error)));
+  }
+  post({ type: "end", outcome: "done" });
+}
+
+self.onmessage = async (/** @type {MessageEvent<Job>} */ event) => {
+  const { language, modules, entry } = event.data;
+  try {
+    if (language === "python") await runPython(modules, entry);
+    else await runJavaScript(modules, entry);
+  } catch (error) {
+    const python = language === "python" && error instanceof Error;
+    post({ type: "end", outcome: "failed", error: python ? error.message : describe(error) });
   }
 };

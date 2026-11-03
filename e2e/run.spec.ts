@@ -168,3 +168,40 @@ test("someone with a view-only link watches runs, but can't start or stop one", 
   await ownerPage.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(viewer.getByRole("button", { name: "Run", exact: true })).toHaveCount(0);
 });
+
+// Python is Pyodide, from its CDN: a few seconds to load the first time
+test("Python runs for everyone, imports the room's other files, and says where errors are", async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const [alice, bob] = await twoGuestsIn(browser);
+  await newFile(alice, "src/utils.py");
+  await write(
+    alice,
+    "def twice(n):\n    return n * 2\n\ndef fail():\n    raise ValueError('too big')\n",
+  );
+  await newFile(alice, "main.py");
+
+  await run(alice, "from src.utils import twice\nprint('twice 21 is', twice(21))");
+  await expect(runStatus(bob)).toContainText("is starting Python");
+  for (const page of [alice, bob]) {
+    await expect(output(page)).toHaveText("twice 21 is 42", { timeout: 45_000 });
+  }
+
+  await run(alice, "from src.utils import fail\nfail()");
+  await expect(output(bob)).toContainText('File "src/utils.py", line 5', { timeout: 20_000 });
+  await expect(output(bob)).toContainText("ValueError: too big");
+
+  await run(alice, "name = input('Your name? ')");
+  await expect(output(bob)).toContainText("input() isn't supported yet", { timeout: 20_000 });
+});
+
+test("a Python endless loop is stopped at the time limit", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const page = await openRoomAs(browser, await newRoomUrl(browser));
+  await newFile(page, "loop.py");
+
+  await run(page, "while True:\n    pass");
+
+  await expect(runStatus(page)).toContainText("time limit", { timeout: 60_000 });
+});

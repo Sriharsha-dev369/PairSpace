@@ -21,6 +21,7 @@ export interface RunView {
   startedAt: number;
   endedAt?: number;
   status: RunStatus;
+  starting: boolean; // still loading its language (Python takes a few seconds), not yet running
   error?: string; // why it failed
   stopRequestedBy?: string;
   truncated: boolean; // output past the limits was dropped
@@ -42,10 +43,16 @@ function running(doc: Y.Doc, id: string) {
 export function currentRun(doc: Y.Doc): RunView | null {
   const run = current(doc);
   if (!run) return null;
-  const { output, ...fields } = run.toJSON() as Omit<RunView, "truncated"> & {
+  const { output, ...fields } = run.toJSON() as Omit<RunView, "truncated" | "starting"> & {
     truncated?: boolean;
+    starting?: boolean;
   };
-  return { ...fields, truncated: fields.truncated ?? false, output };
+  return {
+    ...fields,
+    starting: fields.starting ?? false,
+    truncated: fields.truncated ?? false,
+    output,
+  };
 }
 
 export function startRun(
@@ -61,6 +68,7 @@ export function startRun(
   fields.set("runner", run.runner);
   fields.set("startedAt", run.at ?? Date.now());
   fields.set("status", "running" satisfies RunStatus);
+  fields.set("starting", run.language === "python");
   fields.set("output", new Y.Array<Chunk>());
   doc.getMap("run").set("current", fields);
   return id;
@@ -105,6 +113,11 @@ export function endRun(
     run.set("endedAt", end.at ?? Date.now());
     if (end.error) run.set("error", end.error);
   });
+}
+
+// the language has loaded and the program has begun
+export function markStarted(doc: Y.Doc, id: string) {
+  running(doc, id)?.set("starting", false);
 }
 
 // the runner's browser sees this and stops the program

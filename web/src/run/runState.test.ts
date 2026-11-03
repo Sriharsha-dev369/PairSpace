@@ -9,6 +9,7 @@ import {
   endRun,
   MAX_OUTPUT_CHARS,
   MAX_OUTPUT_LINES,
+  markStarted,
   requestStop,
   runStatus,
   startRun,
@@ -144,6 +145,27 @@ describe("a room's run", () => {
 
     expect(printed(doc)).toBe("x".repeat(MAX_OUTPUT_CHARS));
     expect(currentRun(doc)?.truncated).toBe(true);
+  });
+});
+
+describe("a run that has to load its language first", () => {
+  it("is starting until the language has loaded and the program has begun", () => {
+    const [runner, other] = [new Y.Doc(), new Y.Doc()];
+    const id = startRun(runner, { file: "main.py", language: "python", by: ada, runner: 1 });
+    sync(runner, other);
+    expect(currentRun(other)?.starting).toBe(true);
+
+    markStarted(runner, id);
+    sync(runner, other);
+
+    expect(currentRun(other)?.starting).toBe(false);
+  });
+
+  it("starts at once in JavaScript, which is always loaded", () => {
+    const doc = new Y.Doc();
+    start(doc);
+
+    expect(currentRun(doc)?.starting).toBe(false);
   });
 });
 

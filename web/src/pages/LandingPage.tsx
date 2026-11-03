@@ -128,8 +128,8 @@ export function LandingPage() {
               Copy the room's link and send it to whoever you're working with.
             </Step>
             <Step n={3} title="Code together">
-              Everyone edits at once, in one file or across several. Every change merges and is
-              saved.
+              Everyone edits at once, in one file or across several, and Run shows the output to
+              everyone. Every change merges and is saved.
             </Step>
           </ol>
         </section>
@@ -141,10 +141,7 @@ export function LandingPage() {
           <p className="mt-3 max-w-xl text-muted">
             PairSpace is young. These are being built next.
           </p>
-          <ul className="mt-10 grid gap-x-10 gap-y-6 md:grid-cols-3">
-            <Upcoming title="Run your code">
-              Run JavaScript and Python right in the room, with the output shared with everyone.
-            </Upcoming>
+          <ul className="mt-10 grid gap-x-10 gap-y-6 sm:grid-cols-2">
             <Upcoming title="Replay a session">
               Scrub through how the code was written, keystroke by keystroke, in each person's
               colour.

@@ -17,7 +17,9 @@ function describe(run: RunView, status: Shown): string {
   const { by, file } = run;
   switch (status) {
     case "running":
-      return `${by.name} is running ${file}`;
+      return run.starting
+        ? `${by.name} is starting Python to run ${file}`
+        : `${by.name} is running ${file}`;
     case "done":
       return `${by.name} ran ${file} in ${seconds(run)}`;
     case "failed":
@@ -61,7 +63,7 @@ export function RunControl({
       type="button"
       onClick={onRun}
       disabled={!runnable}
-      title={runnable ? `Run ${file.name} for everyone here` : "Open a .js file to run it"}
+      title={runnable ? `Run ${file.name} for everyone here` : "Open a .js or .py file to run it"}
       className="flex h-7 items-center gap-1.5 rounded-md bg-accent px-2.5 text-xs font-semibold text-canvas transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
     >
       <Play size={11} fill="currentColor" />

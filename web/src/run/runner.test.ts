@@ -203,4 +203,21 @@ describe("the runner", () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(programs).toHaveLength(0);
   });
+
+  it("hands a Python run every Python file in the room, and says when Python has started", async () => {
+    const { doc, runner, programs } = setUp();
+    const main = file("main.py", "from helpers import twice");
+    const helpers = file("lib/helpers.py", "def twice(n): return n * 2");
+
+    expect(runner.run(main, [main, helpers, file("notes.md"), file("app.js")])).toBe(true);
+
+    await reached(programs);
+    expect(programs[0].modules.map((module) => module.path).sort()).toEqual([
+      "lib/helpers.py",
+      "main.py",
+    ]);
+    expect(currentRun(doc)).toMatchObject({ language: "python", starting: true });
+    programs[0].emit({ type: "started" });
+    expect(currentRun(doc)?.starting).toBe(false);
+  });
 });

@@ -4,7 +4,8 @@
 // cookies or call its API as whoever pressed Run. The code runs in a Web Worker, so an endless
 // loop never blocks a page; the room page ends a run by removing this frame, which ends the worker.
 // Plain JS on purpose: an opaque origin can't load module scripts or fetch our files without CORS
-// headers, but classic scripts and importScripts need none.
+// headers, so this page is a classic script, and the room page sends the worker's code (worker.js)
+// with each run.
 
 (() => {
   if (self.origin !== "null") {
@@ -16,14 +17,13 @@
   /** @param {unknown} message */
   const send = (message) => window.parent.postMessage(message, "*");
 
-  /** @param {unknown} job */
-  function run(job) {
-    // a worker must come from this (opaque) origin: a blob made here, which loads the real script
-    const workerUrl = new URL("./worker.js", location.href).href;
-    const bootstrap = `importScripts(${JSON.stringify(workerUrl)});`;
-    const worker = new Worker(
-      URL.createObjectURL(new Blob([bootstrap], { type: "text/javascript" })),
-    );
+  /** @param {unknown} job @param {string} code the worker's (worker.js) */
+  function run(job, code) {
+    // a module worker (Pyodide needs one) from a data: URL: in an opaque origin a module worker
+    // can't come from our server (no CORS headers) nor from a blob (refused), but this works
+    const worker = new Worker(`data:text/javascript,${encodeURIComponent(code)}`, {
+      type: "module",
+    });
     worker.onmessage = (event) => send(event.data);
     worker.onerror = (event) => {
       event.preventDefault();
@@ -37,7 +37,8 @@
   }
 
   window.addEventListener("message", (event) => {
-    if (event.source === window.parent && event.data?.type === "run") run(event.data.job);
+    const message = event.data;
+    if (event.source === window.parent && message?.type === "run") run(message.job, message.worker);
   });
 
   send({ type: "ready" });

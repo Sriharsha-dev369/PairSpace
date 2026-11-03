@@ -21,8 +21,22 @@ export type SandboxEvent =
   | { type: "output"; stream: "out" | "err"; text: string }
   | { type: "end"; outcome: Outcome; error?: string };
 
-// the sandbox page, a plain file in public/sandbox/: frame.js says why it's built as it is
+// the sandbox page and its worker, plain files in public/sandbox/: frame.js says why
 const FRAME = "/sandbox/frame.html";
+const WORKER = "/sandbox/worker.js";
+
+// the worker's code, which goes to the frame with each run (fetched once, from our own origin)
+let workerCode: Promise<string> | undefined;
+const loadWorker = () => {
+  workerCode ??= fetch(WORKER).then((response) => {
+    if (!response.ok) throw new Error(`couldn't load ${WORKER}: ${response.status}`);
+    return response.text();
+  });
+  workerCode.catch(() => {
+    workerCode = undefined; // try again on the next run
+  });
+  return workerCode;
+};
 // loading a language (Python: a few seconds) isn't counted in the time limit, but is capped
 const LOAD_LIMIT_MS = 60_000;
 
@@ -65,8 +79,12 @@ export function runInSandbox(job: Job, onEvent: (event: SandboxEvent) => void): 
   }
 
   function sendJob() {
-    if (!sent) frame.contentWindow?.postMessage({ type: "run", job }, "*");
+    if (sent) return;
     sent = true;
+    loadWorker().then(
+      (worker) => !ended && frame.contentWindow?.postMessage({ type: "run", job, worker }, "*"),
+      () => end({ type: "end", outcome: "failed", error: "The runner couldn't load. Try again." }),
+    );
   }
 
   // the clock starts once the language has loaded; a second "started" would restart it, so the

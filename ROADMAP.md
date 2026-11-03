@@ -23,7 +23,7 @@ M0 Relay ✅ ─► M1 Co-editing ─► M2 Reliability ─► M3 Persistence + 
 | M4 | Accounts (email + GitHub) | M | ✅ done |
 | M5 | Dashboard and share links with roles | M | ✅ done |
 | M6 | Multi-file projects | L | ✅ done 2026-11-03 (files and tabs, trash with restore, converging renames, "(2)" duplicates, `/` folders in the list) |
-| M7 | In-browser Run (JS + Python) | M | in progress: 7.1 JavaScript in a sandbox, output shared (done-when for JS), 7.2 imports between files; next 7.3 Python |
+| M7 | In-browser Run (JS + Python) | M | ✅ done 2026-11-03 (JavaScript and Python in a sandbox, output shared and kept, one run at a time, anyone can stop, imports between files) |
 | M8 | Session replay | M | |
 | M9 | Sync inspector and bad-network toggle | M | |
 | M10 | Landing page and polish | M | started: home page and sign-in redesign done early (2026-11-01); polish pass left |
