@@ -117,6 +117,54 @@ describe("room session", () => {
     expect(logCount("joined")).toBe(2); // alice once, bob once
   });
 
+  // the sync inspector's Offline: the same as losing wifi, so the app shows it the same way
+  it("goes offline when the sync inspector says so, and back to normal syncs at once", async () => {
+    const mine = join("room1", alice);
+    const theirs = join("room1", bob);
+    await Promise.all([mine.synced, theirs.synced]);
+
+    mine.sync.setNetwork("offline");
+    expect(mine.status()).toBe("offline");
+    await waitFor(() => logCount("left") === 1, "the server to see the connection close");
+    mine.files()[0].content.insert(0, "written offline");
+    expect(mine.unsyncedEdits()).toBe(true);
+
+    mine.sync.setNetwork("normal");
+    await waitFor(() => mine.status() === "connected", "the session to reconnect");
+    await waitFor(
+      () => theirs.files()[0].content.toString() === "written offline",
+      "bob to get the edit",
+    );
+  });
+
+  it("stays offline while the sync inspector says so, even when the browser is back online", async () => {
+    const network = new EventTarget();
+    const session = join("room1", alice, network);
+    await session.synced;
+
+    session.sync.setNetwork("offline");
+    network.dispatchEvent(new Event("online"));
+
+    await sleep(600); // longer than the provider's first reconnect delay (200ms)
+    expect(session.status()).toBe("offline");
+    expect(logCount("joined")).toBe(1);
+  });
+
+  it("shows others the network someone is simulating, and ignores one it doesn't know", async () => {
+    const mine = join("room1", alice);
+    const theirs = join("room1", bob);
+    await Promise.all([mine.synced, theirs.synced]);
+    const aliceAsSeen = () => theirs.people().find((person) => person.id === "alice");
+
+    mine.sync.setNetwork("slow");
+    await waitFor(() => aliceAsSeen()?.network === "slow", "bob to see alice's slow network");
+
+    mine.awareness.setLocalStateField("network", "<marquee>"); // a modified client could
+    mine.awareness.setLocalStateField("file", "probe"); // a change to wait for
+    await waitFor(() => aliceAsSeen()?.fileId === "probe", "bob to get alice's next presence");
+    expect(aliceAsSeen()?.network).toBe("normal");
+  });
+
   it("counts only edits made while disconnected as unsynced, until they've synced", async () => {
     const network = new EventTarget();
     const mine = join("room1", alice, network);
@@ -233,8 +281,15 @@ describe("room session", () => {
 
     expect(theirs.people()).toEqual(
       expect.arrayContaining([
-        { id: "alice", name: "Alice", color: alice.color, isMe: false, fileId: null },
-        { id: "bob", name: "Bob", color: bob.color, isMe: true, fileId: null },
+        {
+          id: "alice",
+          name: "Alice",
+          color: alice.color,
+          isMe: false,
+          fileId: null,
+          network: "normal",
+        },
+        { id: "bob", name: "Bob", color: bob.color, isMe: true, fileId: null, network: "normal" },
       ]),
     );
   });

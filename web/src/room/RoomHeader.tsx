@@ -2,6 +2,7 @@ import { History, LogIn } from "lucide-react";
 import { Link } from "react-router";
 import { useSignInHere } from "../auth/next";
 import { SignOutButton } from "../auth/SignOutButton";
+import { NetworkTag } from "../inspector/SyncInspector";
 import { Badge } from "../ui/Badge";
 import { LogoMark } from "../ui/Logo";
 import { PersonChip } from "../ui/PersonChip";
@@ -74,7 +75,9 @@ export function RoomHeader({
           </span>
         )}
         {others.map((person) => (
-          <PersonChip key={person.id} {...person} testId="other-person" />
+          <PersonChip key={person.id} {...person} testId="other-person">
+            {person.network !== "normal" && <NetworkTag network={person.network} />}
+          </PersonChip>
         ))}
         {me && (
           <PersonChip {...me} testId="my-name">

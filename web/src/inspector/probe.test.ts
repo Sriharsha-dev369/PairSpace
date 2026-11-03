@@ -1,50 +1,18 @@
 // Spec for the sync probe: what the sync inspector (and later, benchmarks) learn about a
 // connection. Runs real Yjs clients against the real sync server on a random port.
 
-import { createSyncServer, type SyncServer } from "pairspace-server";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { WebsocketProvider } from "y-websocket";
-import * as Y from "yjs";
+import { describe, expect, it } from "vitest";
+import { type Client, useSyncServer } from "../testing/syncServer";
 import { waitFor } from "../testing/wait";
 import { type SyncProbe, watchSync } from "./probe";
 
-interface Client {
-  doc: Y.Doc;
-  provider: WebsocketProvider;
-}
-
 describe("sync probe", () => {
-  let server: SyncServer;
-  let providers: WebsocketProvider[];
-  let probes: SyncProbe[];
-
-  beforeEach(async () => {
-    server = await createSyncServer({ port: 0 });
-    providers = [];
-    probes = [];
-  });
-
-  afterEach(async () => {
-    for (const probe of probes) probe.stop();
-    for (const provider of providers) provider.destroy();
-    await server.close();
-  });
-
-  async function connect(room = "room1"): Promise<Client> {
-    const doc = new Y.Doc();
-    const provider = new WebsocketProvider(`ws://localhost:${server.port}`, room, doc, {
-      disableBc: true, // in one process, BroadcastChannel would sync clients past the server
-      maxBackoffTime: 100,
-    });
-    providers.push(provider);
-    await waitFor(() => provider.synced, "the client to sync");
-    return { doc, provider };
-  }
+  const { connect, later } = useSyncServer();
 
   // pings often, so tests needn't wait the 2s a browser does
   function watch(client: Client, options: Parameters<typeof watchSync>[1] = {}): SyncProbe {
     const probe = watchSync(client.provider, { pingEveryMs: 20, afterChangeMs: 5, ...options });
-    probes.push(probe);
+    later(() => probe.stop());
     return probe;
   }
 

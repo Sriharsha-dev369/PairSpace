@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
-import type { SyncProbe, SyncStats } from "./probe";
+import type { SessionSync } from "../room/session";
+import type { Network } from "./link";
+import type { SyncStats } from "./probe";
 
-// re-renders after each own change and each answer from the server
-export function useSyncStats(sync: Pick<SyncProbe, "stats" | "subscribe">): SyncStats {
-  const [stats, setStats] = useState(() => sync.stats());
+const read = (sync: SessionSync) => ({ ...sync.stats(), network: sync.network() });
+
+// re-renders after each own change, each answer from the server, and a change of network
+export function useSync(sync: SessionSync): SyncStats & { network: Network } {
+  const [state, setState] = useState(() => read(sync));
 
   useEffect(() => {
-    setStats(sync.stats());
-    return sync.subscribe(() => setStats(sync.stats()));
+    setState(read(sync));
+    return sync.subscribe(() => setState(read(sync)));
   }, [sync]);
 
-  return stats;
+  return state;
 }
 
 // the time, every second: "3 s ago" has to keep counting while nothing else changes
