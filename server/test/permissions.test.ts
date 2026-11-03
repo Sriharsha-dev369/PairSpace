@@ -2,15 +2,14 @@
 // anyone whose link was turned off. Runs the real app against the test database.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { WebSocket } from "ws";
-import { WebsocketProvider } from "y-websocket";
-import * as Y from "yjs";
+import type { WebSocket } from "ws";
+import type { WebsocketProvider } from "y-websocket";
 import { type App, startApp } from "../src/app";
 import { openRoomStore } from "../src/room-store";
+import { connect, openRoom, signUp as signUpTo, WEB_ORIGIN } from "./browser";
 import { TEST_DATABASE_URL } from "./database";
 import { SETTLE_MS, sleep, waitFor } from "./wait";
 
-const WEB_ORIGIN = "http://localhost:5173";
 const store = openRoomStore(TEST_DATABASE_URL);
 let app: App;
 let providers: WebsocketProvider[] = [];
@@ -30,21 +29,8 @@ afterAll(async () => {
   await store.close();
 });
 
-async function signUp(name: string): Promise<string> {
-  const response = await fetch(`http://localhost:${app.port}/api/auth/sign-up/email`, {
-    method: "POST",
-    headers: { origin: WEB_ORIGIN, "content-type": "application/json" },
-    body: JSON.stringify({
-      name,
-      email: `${crypto.randomUUID()}@example.com`,
-      password: "correct horse battery",
-    }),
-  });
-  return response.headers
-    .getSetCookie()
-    .map((c) => c.split(";")[0])
-    .join("; ");
-}
+// a new member's session cookie
+const signUp = async (name: string) => (await signUpTo(app, name)).cookie;
 
 function api(method: string, path: string, cookie: string, body?: object) {
   return fetch(`http://localhost:${app.port}/api/rooms${path}`, {
@@ -55,35 +41,18 @@ function api(method: string, path: string, cookie: string, body?: object) {
 }
 
 // a Yjs client in the room, as a member (cookie) and/or through a share link
-async function join(room: string, { cookie, link }: { cookie?: string; link?: string }) {
-  class BrowserWebSocket extends WebSocket {
-    constructor(url: string, protocols?: string | string[]) {
-      super(url, protocols, { headers: cookie ? { cookie } : {} });
-    }
-  }
-  const doc = new Y.Doc();
-  const provider = new WebsocketProvider(`ws://localhost:${app.port}`, room, doc, {
-    disableBc: true,
-    maxBackoffTime: 100,
-    WebSocketPolyfill: BrowserWebSocket as unknown as typeof globalThis.WebSocket,
-    params: link ? { link } : {},
-  });
+async function join(room: string, who: { cookie?: string; link?: string }) {
+  const provider = openRoom(app, room, who);
   providers.push(provider);
   await waitFor(() => provider.synced, "to sync");
-  return doc.getText("probe");
+  return provider.doc.getText("probe");
 }
 
-// a plain connection: `admitted` once the server starts talking, `closed` with its close code
-function connect(room: string, { cookie, link }: { cookie?: string; link?: string }) {
-  const query = link ? `?link=${encodeURIComponent(link)}` : "";
-  const socket = new WebSocket(`ws://localhost:${app.port}/${room}${query}`, {
-    headers: cookie ? { cookie } : {},
-  });
-  sockets.push(socket);
-  return {
-    admitted: new Promise((resolve) => socket.once("message", resolve)),
-    closed: new Promise<number>((resolve) => socket.on("close", (code) => resolve(code))),
-  };
+// a plain connection, closed after the test
+function connectTo(room: string, who: { cookie?: string; link?: string }) {
+  const connection = connect(app, room, who);
+  sockets.push(connection.socket);
+  return connection;
 }
 
 // the owner's room, with an edit link and a view link
@@ -152,18 +121,18 @@ describe("permissions", () => {
 
   it("a turned-off link cuts off everyone who came through it, and keeps them out", async () => {
     const member = await signUp("Member");
-    await (await connect(room, { cookie: member, link: editLink })).admitted; // now a member
-    const guest = connect(room, { link: editLink });
-    const memberAgain = connect(room, { cookie: member }); // in by membership, no link
-    const ownerInside = connect(room, { cookie: owner });
+    await (await connectTo(room, { cookie: member, link: editLink })).admitted; // now a member
+    const guest = connectTo(room, { link: editLink });
+    const memberAgain = connectTo(room, { cookie: member }); // in by membership, no link
+    const ownerInside = connectTo(room, { cookie: owner });
     await Promise.all([guest.admitted, memberAgain.admitted, ownerInside.admitted]);
 
     expect((await api("DELETE", `/${room}/links/${editLink}`, owner)).status).toBe(204);
 
     expect(await guest.closed).toBe(4403);
     expect(await memberAgain.closed).toBe(4403);
-    expect(await connect(room, { link: editLink }).closed).toBe(4403);
-    expect(await connect(room, { cookie: member }).closed).toBe(4403);
+    expect(await connectTo(room, { link: editLink }).closed).toBe(4403);
+    expect(await connectTo(room, { cookie: member }).closed).toBe(4403);
     expect(
       (await api("GET", "", member)).ok && (await (await api("GET", "", member)).json()),
     ).toEqual([]);

@@ -31,10 +31,15 @@ export interface Member {
 
 export type Role = "owner" | "editor" | "viewer";
 
+// what an admitted connection may do. member null: a guest; via: the share link it depends on
+export interface Grant {
+  member: Member | null;
+  role: Role;
+  via?: string | null;
+}
+
 // who may enter a room and as what, decided before the room is loaded
-export type Admission =
-  // member null: a guest; via: the share link this access depends on, if any
-  { member: Member | null; role: Role; via?: string | null } | { refused: "no-room" | "no-access" };
+export type Admission = Grant | { refused: "no-room" | "no-access" };
 
 export interface LoadedRoom {
   state: Uint8Array; // the latest snapshot merged with every change after it
@@ -96,6 +101,13 @@ const CLOSE_TRY_AGAIN = 1011; // standard "server error": clients retry it
 const CLOSE_NO_ROOM = 4404; // no such room (rooms are created from the dashboard, not by opening one)
 const CLOSE_NO_ACCESS = 4403; // the room exists, but you need a share link (or to be its owner)
 const CLOSE_DELETED = 4410; // the owner deleted the room while you were in it
+const REFUSALS = {
+  "no-room": [CLOSE_NO_ROOM, "room not found"],
+  "no-access": [CLOSE_NO_ACCESS, "no access"],
+} as const;
+
+// without an `admit` (tests), everyone is let in as this
+const GUEST_EDITOR: Grant = { member: null, role: "editor" };
 
 // y-websocket clients drop a connection they hear nothing on for 30s, so beat well inside that
 const HEARTBEAT_MS = 10_000;
@@ -190,36 +202,42 @@ export function createSyncServer({
     room.saveTimer ??= setTimeout(() => flush(name, room), saveDelayMs);
   }
 
-  // writes everything waiting, one row per person; a failed write is put back and retried
+  // writes everything waiting, after any write already in flight, so rows stay in order
   function flush(name: string, room: Room): Promise<void> {
     clearTimeout(room.saveTimer);
     room.saveTimer = undefined;
-    room.saving = room.saving.then(async () => {
-      const changes = room.unsaved.splice(0);
-      if (!store || changes.length === 0) return;
-      const rows = mergeByAuthor(changes);
-      let upTo: number;
-      try {
-        upTo = await store.append(name, rows);
-      } catch (err) {
-        note(`couldn't save "${name}", retrying: ${(err as Error).message}`);
-        if (room.dropped) return; // deleted meanwhile: there's nothing to retry into
-        room.unsaved.unshift(...changes);
-        room.saveTimer ??= setTimeout(() => flush(name, room), saveDelayMs);
-        return;
-      }
-      room.sinceSnapshot += rows.length;
-      if (room.sinceSnapshot < snapshotEvery) return;
-      // taken after the write, so it holds every change up to upTo (and maybe a few later ones)
-      try {
-        await store.snapshot(name, Y.encodeStateAsUpdate(room.doc), upTo);
-        room.sinceSnapshot = 0;
-      } catch (err) {
-        // the changes are already saved; try again after the next write
-        note(`couldn't snapshot "${name}": ${(err as Error).message}`);
-      }
-    });
+    room.saving = room.saving.then(() => write(name, room));
     return room.saving;
+  }
+
+  // one row per person; a failed write is put back and retried
+  async function write(name: string, room: Room) {
+    const changes = room.unsaved.splice(0);
+    if (!store || changes.length === 0) return;
+    const rows = mergeByAuthor(changes);
+    let upTo: number;
+    try {
+      upTo = await store.append(name, rows);
+    } catch (err) {
+      note(`couldn't save "${name}", retrying: ${(err as Error).message}`);
+      if (room.dropped) return; // deleted meanwhile: there's nothing to retry into
+      room.unsaved.unshift(...changes);
+      room.saveTimer ??= setTimeout(() => flush(name, room), saveDelayMs);
+      return;
+    }
+    room.sinceSnapshot += rows.length;
+    if (room.sinceSnapshot >= snapshotEvery) await takeSnapshot(store, name, room, upTo);
+  }
+
+  // taken after a write, so it holds every change up to upTo (and maybe a few later ones)
+  async function takeSnapshot(store: RoomStore, name: string, room: Room, upTo: number) {
+    try {
+      await store.snapshot(name, Y.encodeStateAsUpdate(room.doc), upTo);
+      room.sinceSnapshot = 0;
+    } catch (err) {
+      // the changes are already saved; try again after the next write
+      note(`couldn't snapshot "${name}": ${(err as Error).message}`);
+    }
   }
 
   // drops an empty room from memory once everything in it is written
@@ -321,7 +339,7 @@ export function createSyncServer({
     socket: WebSocket,
     name: string,
     room: Room,
-    { member, role, via = null }: { member: Member | null; role: Role; via?: string | null },
+    { member, role, via = null }: Grant,
     say: (text: string) => void,
   ) {
     const { doc, awareness, conns, presenceOf, memberOf, grants } = room;
@@ -412,9 +430,39 @@ export function createSyncServer({
     };
   }
 
+  // admits a connection and loads its room, then puts it in; null if it was turned away (closed)
+  async function letIn(
+    socket: WebSocket,
+    request: IncomingMessage,
+    name: string,
+    say: (text: string) => void,
+  ) {
+    try {
+      const admission = admit ? await admit(request, name) : GUEST_EDITOR;
+      if ("refused" in admission) {
+        say(`refused: ${admission.refused} for "${name}"`);
+        const [code, reason] = REFUSALS[admission.refused];
+        socket.close(code, reason);
+        return null;
+      }
+      const room = await getRoom(name);
+      if (socket.readyState !== WebSocket.OPEN) return null; // left while the room was opening
+      if (!room || room.dropped) {
+        say(`refused: "${name}" doesn't exist`);
+        socket.close(CLOSE_NO_ROOM, "room not found");
+        return null;
+      }
+      return enter(socket, name, room, admission, say);
+    } catch (err) {
+      say(`couldn't open "${name}", turning away: ${(err as Error).message}`);
+      socket.close(CLOSE_TRY_AGAIN, "room unavailable, try again");
+      return null;
+    }
+  }
+
   wss.on("connection", (socket, req) => {
     const id = nextId++;
-    const say = (text: string) => log(`${new Date().toISOString()} [client ${id}] ${text}`);
+    const say = (text: string) => note(`[client ${id}] ${text}`);
     socket.binaryType = "arraybuffer";
     socket.on("error", (err) => {
       say(`error: ${err.message}`);
@@ -435,32 +483,11 @@ export function createSyncServer({
     };
     socket.on("message", (data) => receive(data as ArrayBuffer));
 
-    void (async () => {
-      try {
-        const admission = admit
-          ? await admit(req, name)
-          : ({ member: null, role: "editor" } as const);
-        if ("refused" in admission) {
-          say(`refused: ${admission.refused} for "${name}"`);
-          const code = admission.refused === "no-room" ? CLOSE_NO_ROOM : CLOSE_NO_ACCESS;
-          socket.close(code, admission.refused === "no-room" ? "room not found" : "no access");
-          return;
-        }
-
-        const room = await getRoom(name);
-        if (socket.readyState !== WebSocket.OPEN) return; // left while the room was opening
-        if (!room || room.dropped) {
-          say(`refused: "${name}" doesn't exist`);
-          socket.close(CLOSE_NO_ROOM, "room not found");
-          return;
-        }
-        receive = enter(socket, name, room, admission, say);
-        for (const data of early) receive(data);
-      } catch (err) {
-        say(`couldn't open "${name}", turning away: ${(err as Error).message}`);
-        socket.close(CLOSE_TRY_AGAIN, "room unavailable, try again");
-      }
-    })();
+    void letIn(socket, req, name, say).then((handle) => {
+      if (!handle) return;
+      receive = handle;
+      for (const data of early) receive(data);
+    });
   });
 
   return new Promise((resolve) => {

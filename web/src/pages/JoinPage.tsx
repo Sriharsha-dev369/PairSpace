@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link2Off, Loader2 } from "lucide-react";
+import { Link2Off } from "lucide-react";
 import { Navigate, useParams } from "react-router";
 import { api } from "../api";
 import { useMember } from "../auth/useMember";
-import { FullScreen } from "../ui/FullScreen";
+import { Loading } from "../ui/FullScreen";
 import { Notice } from "../ui/Notice";
 
 // a share link: find its room, then open it with the link's code (which is what lets you in)
@@ -29,9 +29,5 @@ export function JoinPage() {
       />
     );
   }
-  return (
-    <FullScreen>
-      <Loader2 size={18} className="animate-spin text-muted" />
-    </FullScreen>
-  );
+  return <Loading />;
 }

@@ -22,6 +22,13 @@ export interface User {
   color: string;
 }
 
+// how a person shows to everyone else: colorLight is what CodeMirror's Yjs binding tints their
+// selections with
+export const presence = <T extends { color: string }>(person: T) => ({
+  ...person,
+  colorLight: `${person.color}33`,
+});
+
 export interface Person extends User {
   isMe: boolean;
 }
@@ -87,8 +94,7 @@ export function joinRoom({
   });
   const { awareness } = provider;
 
-  // colorLight is what CodeMirror's Yjs binding uses to tint this person's selections
-  awareness.setLocalStateField("user", { ...user, colorLight: `${user.color}33` });
+  awareness.setLocalStateField("user", presence(user));
 
   const listeners = new Set<() => void>();
   const notify = () => {

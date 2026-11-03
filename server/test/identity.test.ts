@@ -2,16 +2,15 @@
 // Runs the real app (Better Auth + Postgres); members are real sign-ups, rooms are fresh per test.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { WebSocket } from "ws";
-import { WebsocketProvider } from "y-websocket";
-import * as Y from "yjs";
+import type { WebsocketProvider } from "y-websocket";
+import type * as Y from "yjs";
 import { type App, startApp } from "../src/app";
 import { newRoomDocument } from "../src/room-document";
 import { openRoomStore } from "../src/room-store";
+import { connect, type Member, openRoom, signUp as signUpTo, WEB_ORIGIN } from "./browser";
 import { TEST_DATABASE_URL } from "./database";
 import { waitFor } from "./wait";
 
-const WEB_ORIGIN = "http://localhost:5173";
 const store = openRoomStore(TEST_DATABASE_URL);
 let app: App;
 let providers: WebsocketProvider[] = [];
@@ -32,49 +31,16 @@ afterAll(async () => {
   await store.close();
 });
 
-interface Member {
-  id: string;
-  cookie: string; // what the browser sends back to us after signing in
-}
-
-async function signUp(name: string): Promise<Member> {
-  const response = await fetch(`http://localhost:${app.port}/api/auth/sign-up/email`, {
-    method: "POST",
-    headers: { origin: WEB_ORIGIN, "content-type": "application/json" },
-    body: JSON.stringify({
-      name,
-      email: `${crypto.randomUUID()}@example.com`,
-      password: "correct horse battery",
-    }),
-  });
-  const { user } = await response.json();
-  const cookie = response.headers
-    .getSetCookie()
-    .map((c) => c.split(";")[0])
-    .join("; ");
-  return { id: user.id, cookie };
-}
+const signUp = (name: string) => signUpTo(app, name);
 
 // a Yjs client as the browser runs it, showing `displayName`; members also send their cookie,
 // and anyone opening a share link sends its code
 async function join(displayName: string, member?: Member, link?: string) {
-  // browsers send cookies with the WebSocket request by themselves; in Node we add them
-  class BrowserWebSocket extends WebSocket {
-    constructor(url: string, protocols?: string | string[]) {
-      super(url, protocols, { headers: member ? { cookie: member.cookie } : {} });
-    }
-  }
-  const doc = new Y.Doc();
-  const provider = new WebsocketProvider(`ws://localhost:${app.port}`, room, doc, {
-    disableBc: true,
-    maxBackoffTime: 100,
-    WebSocketPolyfill: BrowserWebSocket as unknown as typeof globalThis.WebSocket,
-    params: link ? { link } : {},
-  });
+  const provider = openRoom(app, room, { cookie: member?.cookie, link });
   provider.awareness.setLocalStateField("user", { name: displayName });
   providers.push(provider);
   await waitFor(() => provider.synced, `${displayName} to sync`);
-  return { doc, probe: doc.getText("probe") };
+  return { doc: provider.doc, probe: provider.doc.getText("probe") };
 }
 
 // the test's room, created as the dashboard does (owned by `owner`, if given)
@@ -87,13 +53,8 @@ function createRoom(owner?: Member) {
 }
 
 // how the server closes a plain connection to the room (with a member's cookie and a link code)
-function closeCode(member?: Member, link?: string): Promise<number> {
-  const query = link ? `?link=${encodeURIComponent(link)}` : "";
-  const socket = new WebSocket(`ws://localhost:${app.port}/${room}${query}`, {
-    headers: member ? { cookie: member.cookie } : {},
-  });
-  return new Promise((resolve) => socket.on("close", (code) => resolve(code)));
-}
+const closeCode = (member?: Member, link?: string) =>
+  connect(app, room, { cookie: member?.cookie, link }).closed;
 
 // the saved changes, once they include one matching `which` (writes wait up to half a second)
 async function savedChange(

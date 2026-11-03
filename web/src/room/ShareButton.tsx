@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Link2, Loader2 } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, type LinkRole } from "../api";
+import { DIALOG_OVERLAY, DIALOG_PANEL } from "../ui/styles";
 
-type LinkRole = "editor" | "viewer";
 interface ShareLink {
   code: string;
   role: LinkRole;
@@ -43,8 +43,8 @@ export function ShareButton({ roomId, title }: { roomId: string; title: string }
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-[2px]" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 w-[min(92vw,34rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-line bg-surface p-6 shadow-2xl shadow-black/50">
+        <Dialog.Overlay className={DIALOG_OVERLAY} />
+        <Dialog.Content className={`${DIALOG_PANEL} w-[min(92vw,34rem)]`}>
           <Dialog.Title className="text-base font-semibold">Share “{title}”</Dialog.Title>
           <Dialog.Description className="mt-1.5 text-sm leading-relaxed text-muted">
             Guests don't need an account. Turning a link off removes everyone who came in with it.

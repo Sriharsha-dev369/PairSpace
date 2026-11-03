@@ -3,9 +3,10 @@ import { FileCode2, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
-import { api } from "../api";
+import { api, type Role } from "../api";
 import { SignOutButton } from "../auth/SignOutButton";
 import type { Member } from "../auth/useMember";
+import { Badge } from "../ui/Badge";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Logo } from "../ui/Logo";
 import { timeAgo } from "./timeAgo";
@@ -13,12 +14,9 @@ import { timeAgo } from "./timeAgo";
 interface RoomSummary {
   id: string;
   title: string;
-  role: "owner" | "editor" | "viewer"; // mine, or shared with me
+  role: Role; // mine, or shared with me
   lastEditedAt: string;
 }
-
-const HEADER_BUTTON =
-  "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted transition hover:bg-raised hover:text-fg";
 
 function IconButton({
   label,
@@ -72,7 +70,7 @@ export function Dashboard({ member }: { member: Member }) {
         <Logo />
         <div className="ml-auto flex items-center gap-1">
           <span className="mr-2 text-xs text-muted">{member.name}</span>
-          <SignOutButton className={HEADER_BUTTON} />
+          <SignOutButton />
         </div>
       </header>
 
@@ -169,14 +167,8 @@ function RoomRow({ room, onChanged }: { room: RoomSummary; onChanged: () => void
         </>
       ) : (
         <span className="flex gap-1.5">
-          {room.role === "viewer" && (
-            <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">
-              View only
-            </span>
-          )}
-          <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">
-            Shared with you
-          </span>
+          {room.role === "viewer" && <Badge>View only</Badge>}
+          <Badge>Shared with you</Badge>
         </span>
       )}
     </li>

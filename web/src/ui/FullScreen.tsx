@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import type { ReactNode } from "react";
 
 // a centred page with the app's soft glow behind it: loading states, sign-in, refusals
@@ -14,5 +15,14 @@ export function Card({ children }: { children: ReactNode }) {
     <div className="w-full max-w-sm rounded-2xl border border-line bg-surface p-8 shadow-2xl shadow-black/40">
       {children}
     </div>
+  );
+}
+
+// waiting for the first answer (who's signed in, where a link goes)
+export function Loading() {
+  return (
+    <FullScreen>
+      <Loader2 size={18} className="animate-spin text-muted" />
+    </FullScreen>
   );
 }

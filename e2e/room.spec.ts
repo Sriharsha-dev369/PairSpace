@@ -1,24 +1,7 @@
 // End-to-end spec: real browsers, real web app, real sync server (started by playwright.config.ts).
 
-import { type Browser, type Dialog, expect, type Page, test } from "@playwright/test";
-import { createRoom, memberBrowser, shareLink } from "./members";
-
-// each person gets their own browser context: separate storage, like two different computers.
-// Invited people join as guests (no account)
-async function openRoomAs(browser: Browser, url: string): Promise<Page> {
-  const page = await (await browser.newContext()).newPage();
-  await page.goto(url);
-  await expect(page.locator(".cm-content")).toBeVisible();
-  return page;
-}
-
-// a room a member created on their dashboard, and its share link: the invite
-async function newRoomUrl(browser: Browser): Promise<string> {
-  const owner = await memberBrowser(browser);
-  const url = await shareLink(owner, await createRoom(owner));
-  await owner.close();
-  return url;
-}
+import { type Dialog, expect, test } from "@playwright/test";
+import { memberBrowser, newRoomUrl, openRoomAs, twoGuestsIn } from "./members";
 
 test("an invalid room link says so and leads back to your rooms", async ({ browser }) => {
   const page = await (await memberBrowser(browser)).newPage();
@@ -30,9 +13,7 @@ test("an invalid room link says so and leads back to your rooms", async ({ brows
 });
 
 test("two people in the same room see each other's typing", async ({ browser }) => {
-  const url = await newRoomUrl(browser);
-  const alice = await openRoomAs(browser, url);
-  const bob = await openRoomAs(browser, url);
+  const [alice, bob] = await twoGuestsIn(browser);
 
   await alice.locator(".cm-content").click();
   await alice.keyboard.type("const greeting = 'hi from alice';");
@@ -41,9 +22,7 @@ test("two people in the same room see each other's typing", async ({ browser }) 
 });
 
 test("shows the connection status and who else is in the room", async ({ browser }) => {
-  const url = await newRoomUrl(browser);
-  const alice = await openRoomAs(browser, url);
-  const bob = await openRoomAs(browser, url);
+  const [alice, bob] = await twoGuestsIn(browser);
   const aliceName = await alice.getByTestId("my-name").innerText();
 
   await expect(alice.getByTestId("connection-status")).toHaveText("Connected");
@@ -51,9 +30,7 @@ test("shows the connection status and who else is in the room", async ({ browser
 });
 
 test("shows the other person's cursor labelled with their name", async ({ browser }) => {
-  const url = await newRoomUrl(browser);
-  const alice = await openRoomAs(browser, url);
-  const bob = await openRoomAs(browser, url);
+  const [alice, bob] = await twoGuestsIn(browser);
   const aliceName = await alice.getByTestId("my-name").innerText();
 
   await alice.locator(".cm-content").click();
@@ -63,9 +40,7 @@ test("shows the other person's cursor labelled with their name", async ({ browse
 });
 
 test("the name label sits exactly on top of the other person's cursor", async ({ browser }) => {
-  const url = await newRoomUrl(browser);
-  const alice = await openRoomAs(browser, url);
-  const bob = await openRoomAs(browser, url);
+  const [alice, bob] = await twoGuestsIn(browser);
   await alice.locator(".cm-content").click();
   await alice.keyboard.type("first line\nsecond line");
 
@@ -87,9 +62,7 @@ test("the name label sits exactly on top of the other person's cursor", async ({
 test("the name label stays on the other person's cursor, even while they're idle", async ({
   browser,
 }) => {
-  const url = await newRoomUrl(browser);
-  const alice = await openRoomAs(browser, url);
-  const bob = await openRoomAs(browser, url);
+  const [alice, bob] = await twoGuestsIn(browser);
   const aliceName = await alice.getByTestId("my-name").innerText();
   await alice.locator(".cm-content").click();
   await alice.keyboard.type("hello");
@@ -106,9 +79,7 @@ test("the name label stays on the other person's cursor, even while they're idle
 test("going offline shows it, and edits made offline reach the other person once back", async ({
   browser,
 }) => {
-  const url = await newRoomUrl(browser);
-  const alice = await openRoomAs(browser, url);
-  const bob = await openRoomAs(browser, url);
+  const [alice, bob] = await twoGuestsIn(browser);
   const status = alice.getByTestId("connection-status");
   await expect(status).toHaveText("Connected");
 

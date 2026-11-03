@@ -1,12 +1,13 @@
-// Helpers for signed-in browsers. Only members create rooms; people they invite join as guests.
+// Helpers for signed-in browsers, and the guests they invite. Only members create rooms; people
+// they invite join as guests.
 
-import { type Browser, type BrowserContext, expect, test } from "@playwright/test";
+import { type Browser, type BrowserContext, expect, type Page, test } from "@playwright/test";
 
 export const PASSWORD = "correct horse battery";
 export const newEmail = () => `${crypto.randomUUID()}@example.com`;
 
 // signs a browser up the quick way, straight through the accounts API (the pages have own tests)
-export async function signUp(context: BrowserContext, name = "Room Owner") {
+async function signUp(context: BrowserContext, name = "Room Owner") {
   const origin = test.info().project.use.baseURL ?? ""; // as the browser would send it
   const response = await context.request.post("/api/auth/sign-up/email", {
     headers: { origin },
@@ -46,4 +47,27 @@ export async function shareLink(
   });
   expect(response.ok(), await response.text()).toBe(true);
   return `/join/${(await response.json()).code}`;
+}
+
+// a room a member created on their dashboard, and its share link: the invite
+export async function newRoomUrl(browser: Browser): Promise<string> {
+  const owner = await memberBrowser(browser);
+  const url = await shareLink(owner, await createRoom(owner));
+  await owner.close();
+  return url;
+}
+
+// each person gets their own browser context: separate storage, like two different computers.
+// Invited people join as guests (no account)
+export async function openRoomAs(browser: Browser, url: string): Promise<Page> {
+  const page = await (await browser.newContext()).newPage();
+  await page.goto(url);
+  await expect(page.locator(".cm-content")).toBeVisible();
+  return page;
+}
+
+// two guests in a new room, each in their own browser
+export async function twoGuestsIn(browser: Browser): Promise<[Page, Page]> {
+  const url = await newRoomUrl(browser);
+  return [await openRoomAs(browser, url), await openRoomAs(browser, url)];
 }

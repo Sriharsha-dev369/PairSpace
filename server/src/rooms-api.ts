@@ -14,6 +14,8 @@ function readTitle(value: unknown): string | null {
   return title.length > 0 && title.length <= MAX_TITLE ? title : null;
 }
 
+const BAD_TITLE = { error: `a name is 1 to ${MAX_TITLE} characters` };
+
 type Variables = { memberId: string | null }; // null: not signed in
 
 // who's asking, and that the request comes from our own app
@@ -29,7 +31,25 @@ function checkRequest(auth: Auth, webOrigin: string) {
   });
 }
 
-const signInFirst = { error: "sign in first" };
+// for members only: `me` is their user id
+const membersOnly = createMiddleware<{ Variables: Variables & { me: string } }>(async (c, next) => {
+  const me = c.get("memberId");
+  if (!me) return c.json({ error: "sign in first" }, 401);
+  c.set("me", me);
+  await next();
+});
+
+// the request's JSON body, which must be an object; its fields are checked by each route
+const jsonObject = createMiddleware<{ Variables: { body: Record<string, unknown> } }>(
+  async (c, next) => {
+    const body: unknown = await c.req.json().catch(() => null);
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return c.json({ error: "send a JSON object" }, 400);
+    }
+    c.set("body", body as Record<string, unknown>);
+    await next();
+  },
+);
 
 interface Options {
   auth: Auth;
@@ -44,11 +64,7 @@ export function roomsApi({ auth, store, webOrigin, dropRoom, revokeAccess }: Opt
   const api = new Hono<{ Variables: Variables }>();
   api.use("*", checkRequest(auth, webOrigin));
 
-  api.get("/", async (c) => {
-    const me = c.get("memberId");
-    if (!me) return c.json(signInFirst, 401);
-    return c.json(await store.listRooms(me));
-  });
+  api.get("/", membersOnly, async (c) => c.json(await store.listRooms(c.get("me"))));
 
   // a room's title and my role, for anyone who may enter it (guests show their link)
   api.get("/:id", async (c) => {
@@ -62,64 +78,49 @@ export function roomsApi({ auth, store, webOrigin, dropRoom, revokeAccess }: Opt
   });
 
   // the room's share link for a role (the same each time until it's turned off), for its owner
-  api.post("/:id/links", async (c) => {
-    const me = c.get("memberId");
-    if (!me) return c.json(signInFirst, 401);
-    const body = await c.req.json().catch(() => ({}));
-    const role = body.role;
+  api.post("/:id/links", membersOnly, jsonObject, async (c) => {
+    const { role } = c.get("body");
     if (role !== "editor" && role !== "viewer") {
       return c.json({ error: "role must be editor or viewer" }, 400);
     }
-    const code = await store.shareLink(c.req.param("id"), me, role);
+    const code = await store.shareLink(c.req.param("id"), c.get("me"), role);
     return code ? c.json({ code, role }) : c.notFound();
   });
 
-  api.get("/:id/links", async (c) => {
-    const me = c.get("memberId");
-    if (!me) return c.json(signInFirst, 401);
-    const links = await store.listLinks(c.req.param("id"), me);
+  api.get("/:id/links", membersOnly, async (c) => {
+    const links = await store.listLinks(c.req.param("id"), c.get("me"));
     return links ? c.json(links) : c.notFound();
   });
 
   // turning a link off cuts off everyone who came in through it, at once
-  api.delete("/:id/links/:code", async (c) => {
-    const me = c.get("memberId");
-    if (!me) return c.json(signInFirst, 401);
-    const id = c.req.param("id");
-    const code = c.req.param("code");
-    if (!(await store.revokeLink(id, me, code))) return c.notFound();
+  api.delete("/:id/links/:code", membersOnly, async (c) => {
+    const { id, code } = c.req.param();
+    if (!(await store.revokeLink(id, c.get("me"), code))) return c.notFound();
     revokeAccess(id, code);
     return c.body(null, 204);
   });
 
-  api.post("/", async (c) => {
-    const me = c.get("memberId");
-    if (!me) return c.json(signInFirst, 401);
-    const body = await c.req.json().catch(() => ({}));
+  api.post("/", membersOnly, jsonObject, async (c) => {
+    const body = c.get("body");
     const title = body.title === undefined ? "Untitled room" : readTitle(body.title);
-    if (title === null) return c.json({ error: `a name is 1 to ${MAX_TITLE} characters` }, 400);
+    if (title === null) return c.json(BAD_TITLE, 400);
     const id = newRoomId();
-    await store.createRoom(id, { ownerId: me, title, state: newRoomDocument() });
+    await store.createRoom(id, { ownerId: c.get("me"), title, state: newRoomDocument() });
     return c.json({ id, title }, 201);
   });
 
   // someone else's room answers like a missing one, so ids can't be probed
-  api.patch("/:id", async (c) => {
-    const me = c.get("memberId");
-    if (!me) return c.json(signInFirst, 401);
-    const body = await c.req.json().catch(() => ({}));
-    const title = readTitle(body.title);
-    if (title === null) return c.json({ error: `a name is 1 to ${MAX_TITLE} characters` }, 400);
+  api.patch("/:id", membersOnly, jsonObject, async (c) => {
+    const title = readTitle(c.get("body").title);
+    if (title === null) return c.json(BAD_TITLE, 400);
     const id = c.req.param("id");
-    if (!(await store.renameRoom(id, me, title))) return c.notFound();
+    if (!(await store.renameRoom(id, c.get("me"), title))) return c.notFound();
     return c.json({ id, title });
   });
 
-  api.delete("/:id", async (c) => {
-    const me = c.get("memberId");
-    if (!me) return c.json(signInFirst, 401);
+  api.delete("/:id", membersOnly, async (c) => {
     const id = c.req.param("id");
-    if (!(await store.deleteRoom(id, me))) return c.notFound();
+    if (!(await store.deleteRoom(id, c.get("me")))) return c.notFound();
     await dropRoom(id); // after the delete: a write still in flight now fails instead of recreating it
     return c.body(null, 204);
   });

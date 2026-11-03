@@ -2,13 +2,12 @@
 // rooms. Runs the real app against the test database; members are real sign-ups.
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { WebSocket } from "ws";
 import * as Y from "yjs";
 import { type App, startApp } from "../src/app";
 import { openRoomStore } from "../src/room-store";
+import { connect, signUp as signUpTo, WEB_ORIGIN } from "./browser";
 import { TEST_DATABASE_URL } from "./database";
 
-const WEB_ORIGIN = "http://localhost:5173";
 const store = openRoomStore(TEST_DATABASE_URL);
 let app: App;
 
@@ -20,21 +19,8 @@ afterAll(async () => {
   await store.close();
 });
 
-async function signUp(name = "Alice") {
-  const response = await fetch(`http://localhost:${app.port}/api/auth/sign-up/email`, {
-    method: "POST",
-    headers: { origin: WEB_ORIGIN, "content-type": "application/json" },
-    body: JSON.stringify({
-      name,
-      email: `${crypto.randomUUID()}@example.com`,
-      password: "correct horse battery",
-    }),
-  });
-  return response.headers
-    .getSetCookie()
-    .map((c) => c.split(";")[0])
-    .join("; ");
-}
+// a new member's session cookie
+const signUp = async (name?: string) => (await signUpTo(app, name)).cookie;
 
 // a request as the dashboard makes it: from the web app's origin, with the member's cookie
 function api(
@@ -57,16 +43,6 @@ async function createRoom(cookie: string, title?: string): Promise<{ id: string;
 
 const listRooms = async (cookie: string): Promise<{ id: string; title: string }[]> =>
   (await api("GET", "", { cookie })).json();
-
-// a connection to a room (as a member, if given a cookie), and how the server ends it
-function connectTo(room: string, cookie?: string) {
-  const socket = new WebSocket(`ws://localhost:${app.port}/${room}`, {
-    headers: cookie ? { cookie } : {},
-  });
-  const opened = new Promise((resolve) => socket.on("open", resolve));
-  const closed = new Promise<number>((resolve) => socket.on("close", (code) => resolve(code)));
-  return { opened, closed };
-}
 
 describe("rooms API", () => {
   it("creates a room for a member, with one file, named or 'Untitled room'", async () => {
@@ -91,6 +67,26 @@ describe("rooms API", () => {
       expect(response.status, JSON.stringify(title)).toBe(400);
     }
     expect(await listRooms(alice)).toEqual([]);
+  });
+
+  it("refuses a body that isn't a JSON object, instead of failing", async () => {
+    const alice = await signUp();
+    const { id } = await createRoom(alice);
+
+    for (const [method, path] of [
+      ["POST", ""],
+      ["PATCH", `/${id}`],
+      ["POST", `/${id}/links`],
+    ]) {
+      for (const body of ["null", "[]", "42", "not json"]) {
+        const response = await fetch(`http://localhost:${app.port}/api/rooms${path}`, {
+          method,
+          headers: { origin: WEB_ORIGIN, "content-type": "application/json", cookie: alice },
+          body,
+        });
+        expect(response.status, `${method} ${path} ${body}`).toBe(400);
+      }
+    }
   });
 
   it("lists only my rooms", async () => {
@@ -132,13 +128,13 @@ describe("rooms API", () => {
   it("disconnects everyone in a deleted room, and its address stops working", async () => {
     const alice = await signUp();
     const { id } = await createRoom(alice);
-    const inside = connectTo(id, alice); // the owner, in the room
-    await inside.opened;
+    const inside = connect(app, id, { cookie: alice }); // the owner, in the room
+    await inside.admitted;
 
     await api("DELETE", `/${id}`, { cookie: alice });
 
     expect(await inside.closed).toBe(4410); // "room deleted"; clients don't retry 44xx
-    expect(await connectTo(id, alice).closed).toBe(4404);
+    expect(await connect(app, id, { cookie: alice }).closed).toBe(4404);
   });
 
   it("is only for members", async () => {
@@ -166,11 +162,10 @@ describe("sharing API", () => {
     api("POST", `/${id}/links`, { cookie, body: { role: "editor" } });
 
   // a signed-in browser opening a share link joins the room (the server records it then)
-  function openLink(cookie: string, room: string, code: string) {
-    const socket = new WebSocket(`ws://localhost:${app.port}/${room}?link=${code}`, {
-      headers: { cookie },
-    });
-    return new Promise<void>((resolve) => socket.once("message", () => resolve(socket.close())));
+  async function openLink(cookie: string, room: string, code: string) {
+    const { socket, admitted } = connect(app, room, { cookie, link: code });
+    await admitted;
+    socket.close();
   }
 
   it("gives the owner a share link, the same each time, and nobody else", async () => {

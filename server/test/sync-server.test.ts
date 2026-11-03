@@ -605,6 +605,12 @@ describe("sync server", () => {
       let drops = 0;
       for (const c of clients) c.provider.on("connection-close", () => drops++);
       for (const link of links) link.delay(10, 40); // 10 to 50ms each way
+      // a dropped connection every 10 steps, and one person offline from step 20 to 40
+      const faultsAt = (step: number) => {
+        if (step % 10 === 5) links[Math.floor(random() * 3)].cut();
+        if (step === 20) links[1].offline();
+        if (step === 40) links[1].online();
+      };
 
       let inserted = 0;
       for (let step = 0; step < 60; step++) {
@@ -612,9 +618,7 @@ describe("sync server", () => {
         const chunk = `${step % 3}${"x".repeat(Math.floor(random() * 3))}`;
         t.insert(Math.floor(random() * (t.length + 1)), chunk);
         inserted += chunk.length;
-        if (step % 10 === 5) links[Math.floor(random() * 3)].cut();
-        if (step === 20) links[1].offline();
-        if (step === 40) links[1].online();
+        faultsAt(step);
         await sleep(random() * 20); // pacing, not waiting: typing, deliveries and faults interleave
       }
 

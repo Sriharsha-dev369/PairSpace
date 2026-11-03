@@ -1,16 +1,15 @@
 import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
-import { connect, DATABASE_URL } from "./db";
+import { connect, DATABASE_URL, type Database } from "./db";
 import { newLinkCode } from "./room-id";
 import { roomLinks, roomMembers, rooms, roomUpdates } from "./schema";
-import type { RoomStore, StoredChange } from "./sync-server";
+import type { Role, RoomStore, StoredChange } from "./sync-server";
 
 export interface HistoryEntry extends StoredChange {
   at: Date;
 }
 
-export type LinkRole = "editor" | "viewer";
-export type Role = "owner" | LinkRole;
+export type LinkRole = Exclude<Role, "owner">;
 
 export interface RoomSummary {
   id: string;
@@ -46,6 +45,13 @@ export interface PostgresRoomStore extends RoomStore {
   close(): Promise<void>;
 }
 
+const ownedBy = (id: string, ownerId: string) => and(eq(rooms.id, id), eq(rooms.ownerId, ownerId));
+
+// whether `id` is a room owned by `ownerId` (in a transaction too: it has the same select)
+async function owns(db: Pick<Database, "select">, id: string, ownerId: string) {
+  return (await db.select({ id: rooms.id }).from(rooms).where(ownedBy(id, ownerId))).length > 0;
+}
+
 // an active (not revoked) link with this code, for this room if given
 const activeLink = (code: string, roomId?: string) =>
   and(
@@ -56,6 +62,19 @@ const activeLink = (code: string, roomId?: string) =>
 
 export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
   const { db, pool } = connect(url);
+
+  // the access a membership gives: it depends on the link it came through, if any
+  const membership = (id: string, userId: string) =>
+    db
+      .select({ role: roomMembers.role, via: roomMembers.linkCode })
+      .from(roomMembers)
+      .where(and(eq(roomMembers.roomId, id), eq(roomMembers.userId, userId)));
+
+  // the access an active link for this room gives
+  const linkAccess = async (id: string, code: string) =>
+    (await db.select({ role: roomLinks.role }).from(roomLinks).where(activeLink(code, id))).map(
+      ({ role }) => ({ role, via: code }),
+    );
 
   return {
     async load(room) {
@@ -132,7 +151,7 @@ export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
       const renamed = await db
         .update(rooms)
         .set({ title })
-        .where(and(eq(rooms.id, id), eq(rooms.ownerId, ownerId)))
+        .where(ownedBy(id, ownerId))
         .returning({ id: rooms.id });
       return renamed.length > 0;
     },
@@ -141,17 +160,13 @@ export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
       // its changes go with it (room_updates.room_id cascades)
       const deleted = await db
         .delete(rooms)
-        .where(and(eq(rooms.id, id), eq(rooms.ownerId, ownerId)))
+        .where(ownedBy(id, ownerId))
         .returning({ id: rooms.id });
       return deleted.length > 0;
     },
 
     async shareLink(id, ownerId, role) {
-      const [room] = await db
-        .select({ id: rooms.id })
-        .from(rooms)
-        .where(and(eq(rooms.id, id), eq(rooms.ownerId, ownerId)));
-      if (!room) return null;
+      if (!(await owns(db, id, ownerId))) return null;
       const [existing] = await db
         .select({ code: roomLinks.code })
         .from(roomLinks)
@@ -182,32 +197,17 @@ export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
       const { title } = room;
       if (room.ownerId === null) return { title, role: "editor", via: null }; // before owners: open
       if (userId !== null && room.ownerId === userId) return { title, role: "owner", via: null };
-      const grants: { role: LinkRole; via: string | null }[] = [];
-      if (userId !== null) {
-        const [member] = await db
-          .select({ role: roomMembers.role, via: roomMembers.linkCode })
-          .from(roomMembers)
-          .where(and(eq(roomMembers.roomId, id), eq(roomMembers.userId, userId)));
-        if (member) grants.push(member);
-      }
-      if (linkCode !== null) {
-        const [link] = await db
-          .select({ role: roomLinks.role })
-          .from(roomLinks)
-          .where(activeLink(linkCode, id));
-        if (link) grants.push({ role: link.role, via: linkCode });
-      }
+      const grants = [
+        ...(userId === null ? [] : await membership(id, userId)),
+        ...(linkCode === null ? [] : await linkAccess(id, linkCode)),
+      ];
       // the strongest grant wins: editing over viewing
       const best = grants.find((g) => g.role === "editor") ?? grants[0];
       return best ? { title, ...best } : "no-access";
     },
 
     async listLinks(id, ownerId) {
-      const [room] = await db
-        .select({ id: rooms.id })
-        .from(rooms)
-        .where(and(eq(rooms.id, id), eq(rooms.ownerId, ownerId)));
-      if (!room) return null;
+      if (!(await owns(db, id, ownerId))) return null;
       return db
         .select({ code: roomLinks.code, role: roomLinks.role })
         .from(roomLinks)
@@ -217,11 +217,7 @@ export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
 
     async revokeLink(id, ownerId, code) {
       return db.transaction(async (tx) => {
-        const [room] = await tx
-          .select({ id: rooms.id })
-          .from(rooms)
-          .where(and(eq(rooms.id, id), eq(rooms.ownerId, ownerId)));
-        if (!room) return false;
+        if (!(await owns(tx, id, ownerId))) return false;
         await tx
           .update(roomLinks)
           .set({ revokedAt: sql`now()` })

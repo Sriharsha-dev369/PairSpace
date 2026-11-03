@@ -3,7 +3,7 @@ import { joinRoom, RoomRefused, type RoomSession, type User } from "./session";
 
 const SYNC_URL: string = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:8080";
 
-export type RoomJoin =
+type RoomJoin =
   | { state: "connecting" }
   | { state: "ready"; session: RoomSession }
   | { state: "refused"; code: number }; // the server won't let us in (see RoomRefused)

@@ -120,6 +120,8 @@ export const verifications = pgTable(
 
 // ---------- sharing ----------
 
+const linkRole = () => text("role", { enum: ["editor", "viewer"] }).notNull(); // what a link grants
+
 // a share link: whoever holds the code gets in with its role (until it's revoked, 5.3)
 export const roomLinks = pgTable(
   "room_links",
@@ -128,7 +130,7 @@ export const roomLinks = pgTable(
     roomId: text("room_id")
       .notNull()
       .references(() => rooms.id, { onDelete: "cascade" }),
-    role: text("role", { enum: ["editor", "viewer"] }).notNull(),
+    role: linkRole(),
     createdAt: createdAt(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
@@ -145,7 +147,7 @@ export const roomMembers = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    role: text("role", { enum: ["editor", "viewer"] }).notNull(),
+    role: linkRole(),
     linkCode: text("link_code").references(() => roomLinks.code, { onDelete: "cascade" }), // how
     joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
   },

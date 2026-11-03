@@ -3,9 +3,9 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type App, startApp } from "../src/app";
+import { cookiesFrom, WEB_ORIGIN } from "./browser";
 import { TEST_DATABASE_URL } from "./database";
 
-const WEB_ORIGIN = "http://localhost:5173";
 const PASSWORD = "correct horse battery";
 
 let app: App;
@@ -24,13 +24,6 @@ function call(path: string, { body, cookie }: { body?: object; cookie?: string }
     body: body && JSON.stringify(body),
   });
 }
-
-// the cookies the server set, as the browser would send them back
-const cookiesFrom = (response: Response) =>
-  response.headers
-    .getSetCookie()
-    .map((cookie) => cookie.split(";")[0])
-    .join("; ");
 
 // whose session a cookie belongs to, by email; null if it isn't a working session
 async function signedInAs(cookie: string): Promise<string | null> {

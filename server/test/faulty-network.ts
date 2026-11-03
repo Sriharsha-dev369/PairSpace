@@ -27,13 +27,15 @@ export function createFaultyNetwork(targetPort: number): Promise<FaultyNetwork> 
     const queue: { at: number; chunk: Buffer | null }[] = [];
     let timer: NodeJS.Timeout | undefined;
 
+    const deliver = (chunk: Buffer | null) => {
+      if (chunk === null) to.end();
+      else if (!to.destroyed) to.write(chunk);
+    };
     const release = () => {
       timer = undefined;
       if (frozen) return;
       while (queue.length > 0 && queue[0].at <= Date.now()) {
-        const { chunk } = queue.shift() as (typeof queue)[number];
-        if (chunk === null) to.end();
-        else if (!to.destroyed) to.write(chunk);
+        deliver((queue.shift() as (typeof queue)[number]).chunk);
       }
       if (queue.length > 0) timer = setTimeout(release, queue[0].at - Date.now());
     };

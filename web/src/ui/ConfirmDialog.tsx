@@ -1,5 +1,6 @@
 import { AlertDialog } from "radix-ui";
 import type { ReactNode } from "react";
+import { DIALOG_OVERLAY, DIALOG_PANEL } from "./styles";
 
 // a question that must be answered before something can't be undone
 export function ConfirmDialog({
@@ -25,8 +26,8 @@ export function ConfirmDialog({
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
       {trigger && <AlertDialog.Trigger asChild>{trigger}</AlertDialog.Trigger>}
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-[2px]" />
-        <AlertDialog.Content className="fixed top-1/2 left-1/2 w-[min(92vw,26rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-line bg-surface p-6 shadow-2xl shadow-black/50">
+        <AlertDialog.Overlay className={DIALOG_OVERLAY} />
+        <AlertDialog.Content className={`${DIALOG_PANEL} w-[min(92vw,26rem)]`}>
           <AlertDialog.Title className="text-base font-semibold">{title}</AlertDialog.Title>
           <AlertDialog.Description className="mt-2 text-sm leading-relaxed text-muted">
             {description}

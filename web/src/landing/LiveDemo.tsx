@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { Editor } from "../room/Editor";
-import type { RoomFile } from "../room/session";
+import { presence, type RoomFile } from "../room/session";
+import { PersonChip } from "../ui/PersonChip";
 
 const LATENCY_MS = 80; // one trip across a typical network, between the two documents
 const NETWORK = Symbol("network"); // marks changes that arrived from the other document
@@ -49,8 +50,8 @@ function startDemo(): Demo {
   const herText = hers.getText("code");
   herText.insert(0, OPENING);
   Y.applyUpdate(mine, Y.encodeStateAsUpdate(hers), NETWORK); // both start from the same text
-  myAwareness.setLocalStateField("user", { ...YOU, colorLight: `${YOU.color}33` });
-  herAwareness.setLocalStateField("user", { ...GRACE, colorLight: `${GRACE.color}33` });
+  myAwareness.setLocalStateField("user", presence(YOU));
+  herAwareness.setLocalStateField("user", presence(GRACE));
 
   // she types at her own spot, held as a relative position, so your edits never move her
   let at = Y.createRelativePositionFromTypeIndex(herText, herText.length, -1);
@@ -80,21 +81,6 @@ function startDemo(): Demo {
   };
 }
 
-function Chip({ name, color }: { name: string; color: string }) {
-  return (
-    <span className="flex items-center gap-1.5 rounded-full border border-line bg-raised py-0.5 pr-2.5 pl-0.5 text-xs">
-      <span
-        aria-hidden="true"
-        className="grid h-5 w-5 place-items-center rounded-full text-[10px] font-bold text-canvas"
-        style={{ backgroundColor: color }}
-      >
-        {name[0]}
-      </span>
-      <span className="font-medium">{name}</span>
-    </span>
-  );
-}
-
 // the product, working: a room's editor with a second person in it
 export function LiveDemo() {
   const [demo, setDemo] = useState<Demo | null>(null);
@@ -113,8 +99,8 @@ export function LiveDemo() {
             main.js
           </span>
           <span className="ml-auto flex items-center gap-2">
-            <Chip name="Grace" color={GRACE.color} />
-            <Chip name="You" color={YOU.color} />
+            <PersonChip {...GRACE} />
+            <PersonChip {...YOU} />
             <span className="ml-1 hidden items-center gap-1.5 text-xs text-muted sm:flex">
               <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px] shadow-emerald-400/60" />
               Connected

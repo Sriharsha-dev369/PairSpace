@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link2Off, Loader2, Lock, SearchX, Trash2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useBlocker, useParams, useSearchParams } from "react-router";
-import { api } from "../api";
+import { api, type Role } from "../api";
 import { type Member, useMember } from "../auth/useMember";
 import { Editor } from "../room/Editor";
 import { FileTabs } from "../room/FileTabs";
@@ -74,7 +74,7 @@ function Room({
   const info = useQuery({
     queryKey: ["room", roomId, link],
     queryFn: () =>
-      api<{ title: string; role: string }>(
+      api<{ title: string; role: Role }>(
         "GET",
         `/api/rooms/${roomId}${link ? `?link=${encodeURIComponent(link)}` : ""}`,
       ),

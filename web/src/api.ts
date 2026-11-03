@@ -1,6 +1,10 @@
 // our own server's JSON API, on this origin (the browser adds the session cookie and Origin)
 
-export class ApiError extends Error {
+// what someone may do in a room: its owner, or what their share link (or membership) grants
+export type Role = "owner" | "editor" | "viewer";
+export type LinkRole = Exclude<Role, "owner">;
+
+class ApiError extends Error {
   readonly status: number;
 
   constructor(status: number, message: string) {
