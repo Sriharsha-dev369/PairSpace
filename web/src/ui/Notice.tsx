@@ -3,19 +3,24 @@ import { Link } from "react-router";
 import { useSignInHere } from "../auth/next";
 import { Card, FullScreen } from "./FullScreen";
 
-// a dead end, with the way on: members back to their rooms, guests to sign in (and back here)
+// a dead end, with the way on: members back to their rooms, guests to sign in (and back here),
+// unless the page says where
 export function Notice({
   icon: Icon,
   title,
   body,
   isMember,
+  way,
 }: {
   icon: LucideIcon;
   title: string;
   body: string;
   isMember: boolean;
+  way?: { to: string; label: string };
 }) {
   const signIn = useSignInHere();
+  const on =
+    way ?? (isMember ? { to: "/", label: "Back to your rooms" } : { to: signIn, label: "Sign in" });
   return (
     <FullScreen>
       <Card>
@@ -26,10 +31,10 @@ export function Notice({
           <h1 className="mt-5 text-base font-semibold">{title}</h1>
           <p className="mt-2 text-sm leading-relaxed text-muted">{body}</p>
           <Link
-            to={isMember ? "/" : signIn}
+            to={on.to}
             className="mt-6 inline-flex h-9 items-center rounded-lg bg-accent px-4 text-sm font-semibold text-canvas transition hover:brightness-110"
           >
-            {isMember ? "Back to your rooms" : "Sign in"}
+            {on.label}
           </Link>
         </div>
       </Card>

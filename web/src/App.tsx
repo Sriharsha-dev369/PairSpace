@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 import { AuthPage } from "./pages/AuthPage";
 import { HomePage } from "./pages/HomePage";
 import { JoinPage } from "./pages/JoinPage";
+import { ReplayPage } from "./pages/ReplayPage";
 import { RoomPage } from "./pages/RoomPage";
 
 // sonner reads its colours from these variables (as shadcn/ui's wrapper does); ours match the app
@@ -24,6 +25,7 @@ const router = createBrowserRouter([
   { path: "/sign-in", element: <AuthPage mode="sign-in" /> },
   { path: "/sign-up", element: <AuthPage mode="sign-up" /> },
   { path: "/r/:roomId", element: <RoomPage /> },
+  { path: "/r/:roomId/replay", element: <ReplayPage /> },
   { path: "/join/:code", element: <JoinPage /> },
 ]);
 

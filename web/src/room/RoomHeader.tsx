@@ -1,4 +1,4 @@
-import { LogIn } from "lucide-react";
+import { History, LogIn } from "lucide-react";
 import { Link } from "react-router";
 import { useSignInHere } from "../auth/next";
 import { SignOutButton } from "../auth/SignOutButton";
@@ -23,6 +23,7 @@ interface Props {
   roomId: string;
   title?: string; // until it loads, the room's id stands in
   canShare: boolean; // only the owner makes share links
+  replay?: string; // the replay page, for people who can edit
   viewOnly: boolean; // came in with a view link: can watch, not type
   status: ConnectionStatus;
   people: Person[];
@@ -46,6 +47,7 @@ export function RoomHeader({
   roomId,
   title,
   canShare,
+  replay,
   viewOnly,
   status,
   people,
@@ -104,6 +106,12 @@ export function RoomHeader({
             </span>
           )}
         </span>
+        {replay && (
+          <Link to={replay} className={HEADER_BUTTON}>
+            <History size={14} />
+            Replay
+          </Link>
+        )}
         <AccountButton isMember={isMember} />
         {canShare && <ShareButton roomId={roomId} title={title ?? roomId} />}
       </div>

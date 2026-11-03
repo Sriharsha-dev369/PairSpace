@@ -209,6 +209,33 @@ describe("sharing API", () => {
     expect((await api("GET", `/${id}`)).status).toBe(404);
   });
 
+  // replay (M8) shows text that was later deleted, so it's for people who can edit
+  it("gives the room's history to people who can edit, oldest first, with who and when", async () => {
+    const [alice, bob] = [await signUp("Alice"), await signUp("Bob")];
+    const { id } = await createRoom(alice);
+    const edit = (await (await shareLink(alice, id)).json()).code;
+    const view = (
+      await (await api("POST", `/${id}/links`, { cookie: alice, body: { role: "viewer" } })).json()
+    ).code;
+    const typed = new Y.Doc();
+    typed.getText("probe").insert(0, "hello");
+    const change = Y.encodeStateAsUpdate(typed);
+    await store.append(id, [{ update: change, author: "Alice", authorId: null }]);
+
+    const response = await api("GET", `/${id}/history`, { cookie: alice });
+
+    expect(response.status).toBe(200);
+    const history = await response.json();
+    expect(history.map((step: { author: string | null }) => step.author)).toEqual([null, "Alice"]);
+    expect(new Date(history[1].at).getTime()).toBeGreaterThanOrEqual(
+      new Date(history[0].at).getTime(),
+    );
+    expect(Buffer.from(history[1].update, "base64")).toEqual(Buffer.from(change));
+    expect((await api("GET", `/${id}/history?link=${edit}`)).status).toBe(200); // a guest who edits
+    expect((await api("GET", `/${id}/history?link=${view}`)).status).toBe(403); // view only
+    expect((await api("GET", `/${id}/history`, { cookie: bob })).status).toBe(404); // no access
+  });
+
   it("lists rooms shared with me, which I can't rename or delete", async () => {
     const [alice, bob] = [await signUp("Alice"), await signUp("Bob")];
     const { id } = await createRoom(alice, "Alice's room");

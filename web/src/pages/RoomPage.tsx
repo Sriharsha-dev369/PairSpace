@@ -125,6 +125,11 @@ function Room({
         roomId={roomId}
         title={info.data?.title}
         canShare={info.data?.role === "owner"}
+        replay={
+          info.data && !viewOnly
+            ? `/r/${roomId}/replay${link ? `?link=${encodeURIComponent(link)}` : ""}`
+            : undefined
+        }
         viewOnly={viewOnly}
         status={status}
         people={people}

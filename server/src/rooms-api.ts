@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import type { Auth } from "./auth";
 import { newRoomDocument } from "./room-document";
@@ -66,15 +66,35 @@ export function roomsApi({ auth, store, webOrigin, dropRoom, revokeAccess }: Opt
 
   api.get("/", membersOnly, async (c) => c.json(await store.listRooms(c.get("me"))));
 
-  // a room's title and my role, for anyone who may enter it (guests show their link)
+  // what the person asking may do in the room: as a member, or through the link they show (guests)
+  const accessOf = (c: Context<{ Variables: Variables }>, id: string) =>
+    store.access(id, { userId: c.get("memberId"), linkCode: c.req.query("link") ?? null });
+
+  // a room's title and my role, for anyone who may enter it
   api.get("/:id", async (c) => {
     const id = c.req.param("id");
-    const access = await store.access(id, {
-      userId: c.get("memberId"),
-      linkCode: c.req.query("link") ?? null,
-    });
+    const access = await accessOf(c, id);
     if (access === "no-room" || access === "no-access") return c.notFound();
     return c.json({ id, title: access.title, role: access.role });
+  });
+
+  // every saved change, oldest first, for replay: only for people who can edit, since it shows
+  // text that was later deleted
+  api.get("/:id/history", async (c) => {
+    const id = c.req.param("id");
+    const access = await accessOf(c, id);
+    if (access === "no-room" || access === "no-access") return c.notFound();
+    if (access.role === "viewer")
+      return c.json({ error: "replay is for people who can edit" }, 403);
+    const history = await store.history(id);
+    return c.json(
+      history.map(({ update, author, authorId, at }) => ({
+        at,
+        author,
+        authorId,
+        update: Buffer.from(update).toString("base64"),
+      })),
+    );
   });
 
   // the room's share link for a role (the same each time until it's turned off), for its owner

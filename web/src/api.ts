@@ -4,7 +4,7 @@
 export type Role = "owner" | "editor" | "viewer";
 export type LinkRole = Exclude<Role, "owner">;
 
-class ApiError extends Error {
+export class ApiError extends Error {
   readonly status: number;
 
   constructor(status: number, message: string) {

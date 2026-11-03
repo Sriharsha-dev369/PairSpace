@@ -49,6 +49,8 @@ test("the name label sits exactly on top of the other person's cursor", async ({
     if (!b) throw new Error(`${selector} is not visible`);
     return b;
   };
+  // measured once all the typing has arrived: a keystroke between the two reads would move the caret
+  await expect(bob.locator(".cm-content")).toContainText("second line");
   await expect(bob.locator(".cm-ySelectionInfo")).toBeVisible();
   const caret = await box(".cm-ySelectionCaret");
   const label = await box(".cm-ySelectionInfo");
