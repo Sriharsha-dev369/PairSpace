@@ -46,6 +46,7 @@ export interface PostgresRoomStore extends RoomStore {
   listLinks(id: string, ownerId: string): Promise<{ code: string; role: LinkRole }[] | null>;
   // turns a link off, and removes the members it let in; false if it isn't the owner's room
   revokeLink(id: string, ownerId: string, code: string): Promise<boolean>;
+  ping(): Promise<void>; // throws unless the database answers
   close(): Promise<void>;
 }
 
@@ -260,6 +261,9 @@ export function openRoomStore(url = DATABASE_URL): PostgresRoomStore {
       }));
     },
 
+    ping: async () => {
+      await pool.query("select 1");
+    },
     close: () => pool.end(),
   };
 }

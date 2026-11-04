@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { joinRoom, RoomRefused, type RoomSession, type User } from "./session";
 
-const SYNC_URL: string = import.meta.env.VITE_SYNC_URL ?? "ws://localhost:8080";
+// the room server: in development its own port; built, the server that serves this page (one
+// origin: its cookie goes along, and https pages get wss)
+const SYNC_URL: string =
+  import.meta.env.VITE_SYNC_URL ??
+  (import.meta.env.DEV
+    ? "ws://localhost:8080"
+    : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`);
 
 type RoomJoin =
   | { state: "connecting" }
