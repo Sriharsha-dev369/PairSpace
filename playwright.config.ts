@@ -28,6 +28,7 @@ export default defineConfig({
       WEB_ORIGIN: `http://localhost:${PORT}`,
       WEB_DIR: "web/dist",
       VITE_RUN_TIME_LIMIT_MS: "3000", // endless loops end sooner than the real 10 s
+      VITE_SENTRY_DSN: "http://e2e@sentry.invalid/1", // nowhere: tests catch what's sent
       // a placeholder GitHub app: tests check we send people to GitHub, not GitHub itself
       GITHUB_CLIENT_ID: "e2e-github-app",
       GITHUB_CLIENT_SECRET: "e2e-github-secret",

@@ -10,6 +10,7 @@ export interface Config {
   webOrigin: string; // the site's own address: cookies and requests are trusted only from it
   webDir?: string; // the built web app to serve (production); unset, Vite serves it
   github?: GitHubApp;
+  sentryDsn?: string; // where to report errors (Sentry); unset, they're only logged
 }
 
 const required = (name: string, what: string) => ({ error: `${name}: ${what}` });
@@ -52,5 +53,6 @@ export function checkConfig(env: Record<string, string | undefined>): Config {
       GITHUB_CLIENT_ID && GITHUB_CLIENT_SECRET
         ? { clientId: GITHUB_CLIENT_ID, clientSecret: GITHUB_CLIENT_SECRET }
         : undefined,
+    sentryDsn: env.SENTRY_DSN,
   };
 }

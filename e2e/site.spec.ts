@@ -27,6 +27,25 @@ test("a page whose code fails to load says so, and Reload brings it back", async
   await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
 });
 
+// the e2e build reports to a Sentry address that can't exist (playwright.config.ts): the test
+// catches what the browser tries to send there
+test("a page that fails is reported, so it can be fixed", async ({ browser }) => {
+  const owner = await memberBrowser(browser);
+  const roomId = await createRoom(owner);
+  const page = await owner.newPage();
+  const reports: string[] = [];
+  await page.route("**/sentry.invalid/**", async (route) => {
+    reports.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, body: "{}" });
+  });
+  await page.route("**/ReplayPage*", (route) => route.abort());
+
+  await page.goto(`/r/${roomId}/replay`);
+
+  await expect(page.getByRole("heading", { name: "Something went wrong" })).toBeVisible();
+  await expect.poll(() => reports.join("\n")).toContain("dynamically imported module");
+});
+
 // the not-found page fetches no other page's code ahead, so going home from it needs the network
 test("a page that can't be downloaded because you're offline says that", async ({ page }) => {
   await page.goto("/no-such-page");

@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { startApp } from "./app";
 import { ConfigProblem, checkConfig } from "./config";
 import { migrateDatabase } from "./db";
@@ -11,8 +12,21 @@ try {
   process.exit(1);
 }
 
+// errors reach Sentry when a deployment says where (crashes too, from here on); otherwise logs only
+if (config.sentryDsn) {
+  Sentry.init({
+    dsn: config.sentryDsn,
+    environment: process.env.NODE_ENV ?? "development",
+    release: process.env.RENDER_GIT_COMMIT, // Render sets it: which commit an error came from
+  });
+}
+
 await migrateDatabase(config.databaseUrl);
-const app = await startApp({ ...config, log: console.log });
+const app = await startApp({
+  ...config,
+  log: console.log,
+  report: (error) => Sentry.captureException(error),
+});
 console.log(`Listening on port ${app.port}: accounts API at /api/auth, rooms over WebSockets`);
 if (config.webDir) console.log(`Serving the web app from ${config.webDir}`);
 if (!config.github)
@@ -22,6 +36,7 @@ if (!config.github)
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {
     await app.close();
+    await Sentry.close(2000); // send what's still queued
     process.exit(0);
   });
 }

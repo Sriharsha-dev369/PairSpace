@@ -27,6 +27,7 @@ interface Options {
   webDir?: string; // the built web app (production); without it, Vite serves the app
   github?: GitHubApp;
   log?: (line: string) => void;
+  report?: (error: unknown) => void; // an error worth a person's attention (production: Sentry)
 }
 
 // files named by their content (Vite's assets/index-a1B2c3D4.js): a new version is a new name
@@ -57,6 +58,7 @@ export async function startApp({
   webDir,
   github,
   log,
+  report = () => {},
 }: Options): Promise<App> {
   const { auth, close: closeAuth } = createAuth({ databaseUrl, webOrigin, github });
   const store = openRoomStore(databaseUrl);
@@ -66,6 +68,12 @@ export async function startApp({
   // the standard set, but not Cross-Origin-Resource-Policy: Run's sandbox page has an opaque
   // origin (another site, to the browser), and it must still load its script from us
   api.use("*", secureHeaders({ crossOriginResourcePolicy: false }));
+  // a request that failed inside the server: reported, and answered without our insides
+  api.onError((error, c) => {
+    report(error);
+    log?.(`request failed: ${c.req.method} ${c.req.path}: ${error.message}`);
+    return c.text("Something went wrong", 500);
+  });
   // for the host's health checks: up only if the database answers
   api.get("/api/health", async (c) => {
     try {

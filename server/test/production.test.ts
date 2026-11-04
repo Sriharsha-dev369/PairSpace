@@ -86,6 +86,28 @@ describe("health", () => {
   });
 });
 
+describe("errors", () => {
+  // the database is unreachable, so looking up an invite fails inside the server
+  it("reports a request that failed, and answers it with a plain 500", async () => {
+    const reported: unknown[] = [];
+    const broken = await startApp({
+      port: 0,
+      databaseUrl: "postgres://nobody:nothing@localhost:1/none",
+      webOrigin: WEB_ORIGIN,
+      report: (error) => reported.push(error),
+    });
+    try {
+      const response = await get("/api/links/some-code", broken);
+      expect(response.status).toBe(500);
+      expect(await response.text()).toBe("Something went wrong"); // nothing about the insides
+      expect(reported).toHaveLength(1);
+      expect(reported[0]).toBeInstanceOf(Error);
+    } finally {
+      await broken.close();
+    }
+  });
+});
+
 describe("settings", () => {
   const PRODUCTION = {
     NODE_ENV: "production",
@@ -111,6 +133,7 @@ describe("settings", () => {
         WEB_DIR: "../web/dist",
         GITHUB_CLIENT_ID: "id",
         GITHUB_CLIENT_SECRET: "s",
+        SENTRY_DSN: "https://key@o1.ingest.sentry.io/2",
       }),
     ).toEqual({
       port: 10000,
@@ -118,6 +141,7 @@ describe("settings", () => {
       webOrigin: PRODUCTION.WEB_ORIGIN,
       webDir: "../web/dist",
       github: { clientId: "id", clientSecret: "s" },
+      sentryDsn: "https://key@o1.ingest.sentry.io/2",
     });
   });
 
