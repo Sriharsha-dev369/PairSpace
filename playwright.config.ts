@@ -11,6 +11,8 @@ export default defineConfig({
   fullyParallel: true,
   // a stray test.only would silently skip every other test in CI
   forbidOnly: !!process.env.CI,
+  // the README's pictures (e2e/screenshots.spec.ts) are taken only when asked: npm run screenshots
+  grepInvert: process.env.SCREENSHOTS ? undefined : /@screenshots/,
   use: { baseURL: DEPLOYED ?? `http://localhost:${PORT}`, trace: "retain-on-failure" },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },

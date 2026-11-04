@@ -1,28 +1,85 @@
 # PairSpace
 
+**A real-time collaborative code editor.** Share a link, and everyone in the room edits the same files
+live, sees each other's cursors, runs the code and replays how it was written. Built around a CRDT
+sync engine, with every claim below reproducible from this repo.
+
 [![CI](https://github.com/Sriharsha-dev369/PairSpace/actions/workflows/ci.yml/badge.svg)](https://github.com/Sriharsha-dev369/PairSpace/actions/workflows/ci.yml)
+<!-- Live demo: add the Render address here once deployed -->
 
-Real-time collaborative code editor, built as a learning project in distributed systems:
-multiple people edit one document at the same time over an unreliable network.
+![Two browsers editing one file at the same time: each sees the other's cursor and typing, and a Run shows its output in both](docs/images/live.gif)
 
-- `idea.md`: what we're building and why
-- `context.md`: reasoning so far, concepts, and the decision log
-- `ROADMAP.md`: Phase 1 milestones in order
+<sub>Two real browsers in one room: Ada and Grace type at the same time, each sees the other's labelled
+cursor, and Ada's Run shows its output to both. Recorded from the production build by
+`npm run screenshots`.</sub>
 
-## Goals
+## Highlights
 
-A full-stack collaborative editor (frontend, backend, auth, database) with a distributed-systems core.
-Phase 1: a complete, polished MVP. Phase 2: production-ready, with benchmarks for latency, scaling,
-delayed networks and concurrent changes.
+| | |
+|---|---|
+| **Consistent under faults** | 100 of 100 seeded runs converge with 0 of 11,920 characters lost, through 440 dropped connections and an offline spell per run ([the experiment](#how-every-copy-stays-identical-and-the-proof), `npm run convergence`) |
+| **Own sync server** | WebSockets with heartbeats, reconnect and catch-up, roles enforced server-side, and every change saved to Postgres as an append-only log (batched every 0.5 s), from which rooms are rebuilt after a restart |
+| **Runs untrusted code safely** | JavaScript and Python (Pyodide, WebAssembly) in a sandboxed iframe with no access to the session, inside a Web Worker with a time limit; tested in Chromium, WebKit (Safari) and Firefox |
+| **Tested** | 355 automated tests (Vitest, Playwright), new ones mutation-checked; CI on every push gates every deploy |
+| **Fast and accessible** | 62% less JavaScript on the first page (363 → 138 kB gzipped) by splitting code per page; every page passes axe's automated WCAG 2.1 AA checks |
 
-## Status
+## Features
 
-Milestones M1 to M10 are done, M11 (deploy) in progress. Rooms you share by link, where several people edit
-the same files live with names and cursors; it survives drops, offline spells and bad networks, and saves
-every change to Postgres. Accounts by email and password or GitHub; invited guests join by link with a
-name. Multi-file projects, Run (JavaScript and Python, in the browser), edit or view-only links, session
-replay, and a sync inspector with a simulated bad network. Works on phones; every page passes automated
-accessibility checks (WCAG 2.1 AA).
+- **Rooms by link:** edit or view-only share links; turning one off disconnects whoever used it, at once.
+- **Live co-editing:** names, colours and labelled cursors, who's in which file, multi-file projects with folders, and a trash with restore.
+- **Run:** JavaScript (with imports between the room's files) and Python, in the browser of whoever pressed Run; everyone sees the output.
+- **Replay:** step or play through a room's whole history, each person's text in their colour.
+- **Sync inspector:** live round trip, changes the server hasn't confirmed yet, a message log, and a simulated slow, flaky or offline network to watch the copies still converge.
+- **Accounts:** email and password or GitHub; guests join by invite with a name, no account needed.
+- **Everywhere:** works on phones; edits made offline merge when the connection returns.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![A room: two files, Grace's labelled cursor in Ada's code, and the output of a run](docs/images/room.png) | ![The sync inspector on a simulated slow network: round trip 1.0 s, graph, network choices](docs/images/inspector.png) |
+| **A room:** two files, another person's cursor, and a run's output, shared with everyone | **Sync inspector:** a simulated slow network adds 0.5 s each way, so the round trip becomes 1.0 s |
+| ![Replay of the room, each person's text in their colour](docs/images/replay.png) | ![The invite screen: who invited you, who's in the room now, and your name](docs/images/invite.png) |
+| **Replay:** the room at any step, coloured by who wrote what | **Invite:** whose room it is, who's there now, and your name |
+
+<p align="center">
+  <img src="docs/images/phone.png" width="260" alt="The room on a phone: the code, another person's cursor and a run's output">
+  &nbsp;&nbsp;
+  <img src="docs/images/home.png" width="540" alt="The home page: Share a link. Code together, live, above a live demo editor">
+</p>
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph browser["Browser: React + Vite"]
+    editor["CodeMirror editor"] <--> doc["Yjs document<br/>(this person's copy of the room)"]
+    doc <--> client["y-websocket client<br/>+ sync probe (pings)"]
+    run["Run sandbox<br/>iframe + Web Worker<br/>JavaScript, Python (Pyodide)"] -->|"output, into the room"| doc
+  end
+  subgraph server["Node.js server: one process, one origin"]
+    sync["Sync server: ws + y-protocols<br/>rooms in memory, heartbeats,<br/>roles, ping echo"]
+    api["REST API: Hono<br/>accounts: Better Auth"]
+    web["The built web app"]
+  end
+  db[("PostgreSQL<br/>append-only change log,<br/>snapshots, users, rooms, links")]
+  client <-->|"WebSocket: changes, presence, pings"| sync
+  browser -->|"HTTPS"| api
+  browser -->|"HTTPS"| web
+  sync -->|"batched writes, every 0.5 s"| db
+  api --> db
+  server -.->|"errors"| sentry["Sentry"]
+```
+
+- **Local-first:** typing changes the browser's own copy at once, so the network is never in the way;
+  the sync server relays changes to everyone else in the room and saves them.
+- **One server, one origin:** it serves the web app, the API and the WebSockets, so the session cookie
+  is first-party and needs no CORS. It checks its settings at start and reports healthy only when the
+  database answers.
+- **Rooms live in memory** while anyone's in them, are rebuilt from the change log (with snapshots
+  every 100 changes) when someone joins, and leave memory 30 s after the last person.
+- **Run is isolated:** the sandbox iframe has an opaque origin, so code run there can't use the
+  person's session; its output is written into the room's document, so everyone sees it.
 
 ## How every copy stays identical, and the proof
 
@@ -69,11 +126,37 @@ What the numbers mean:
 - The sync server's own tests (`npm test -w server`, "unreliable network") cover catch-up, offline
   merges, slow links, and a chaos run with a fresh random seed each time.
 
+## Tech stack
+
+| Layer | Tools | Why these |
+|---|---|---|
+| Sync | Yjs (CRDT), y-protocols, `ws` | Edits merge without a central lock; the server is my own, for heartbeats, roles and persistence |
+| Frontend | React 19, Vite, React Router, TanStack Query, CodeMirror 6, Tailwind CSS, Radix | A fast editor and an accessible UI, with each page's code loaded only when visited |
+| Backend | Node.js 24, TypeScript, Hono, Better Auth (email, GitHub OAuth) | One small server for the API, accounts and WebSockets |
+| Data | PostgreSQL, Drizzle ORM | An append-only change log powers both recovery and replay |
+| Run | Pyodide (WebAssembly), sandboxed iframe + Web Worker | Code runs in the browser, isolated from the app |
+| Quality | Vitest, Playwright, axe-core, Biome, knip, GitHub Actions | Tests at every level; dead code and lint fail CI |
+| Production | Render, Neon, Sentry (all free plans) | Deploys from `render.yaml` once CI passes; errors reported |
+
+## Testing and quality
+
+| What | How | Count |
+|---|---|---|
+| Server: sync protocol, persistence, auth, roles, API | Vitest, against a real Postgres | 126 |
+| Web: room session, sync probe, simulated network, files, replay, Run | Vitest, against the real sync server | 114 |
+| End to end: every flow, phones, crashes, offline, accessibility | Playwright on the production build: Chromium, WebKit, and Firefox in CI | 115 |
+| Convergence under faults | `npm run convergence`: 100 seeded runs per network; CI reruns 20 | 200 runs |
+
+- Every new test was mutation-checked: the code it covers was broken on purpose, and the test had to fail.
+- Accessibility: axe scans every page and its dialogs, phone layout included, for WCAG 2.1 A and AA.
+- A smoke test (`e2e/smoke.spec.ts`) checks any deployed site with `BASE_URL=…`, and runs daily from GitHub Actions.
+- Every design decision, with the reasons and the alternatives turned down, is in [`context.md`](context.md) (105 entries).
+
 ## Run it
 
 Requires Node 24 or newer (`nvm use` reads `.nvmrc`) and Docker (for Postgres).
 
-npm workspaces: `server/` (WebSocket server) and `web/` (Vite + React app). Run everything from the repo root.
+npm workspaces: `server/` (API and sync server) and `web/` (the React app). Run everything from the repo root.
 
 ```
 npm install
@@ -87,6 +170,8 @@ npm run lint            # Biome check; npm run format to fix
 npm run test:e2e        # browser tests (Playwright; first time: npx playwright install chromium)
 npm run build           # production build, all packages
 npm run build -w server && npm start -w server   # compiled server
+npm run convergence     # the convergence experiment (no database needed)
+npm run screenshots     # retake the README's pictures and GIF (needs ffmpeg)
 ```
 
 CI (GitHub Actions, `.github/workflows/ci.yml`) runs the same checks on every push to `main` and every pull request.
@@ -102,3 +187,10 @@ bash scripts/deploy-wizard.sh
 
 Then `.github/workflows/smoke.yml` checks the site every day (set the `PRODUCTION_URL` repository
 variable; the wizard does), or by hand: `BASE_URL=https://… npx playwright test e2e/smoke.spec.ts --project chromium`.
+
+## Known limitations
+
+- On Render's free plan the server sleeps after 15 minutes without visitors; the next one waits about a minute while it wakes.
+- No password reset or email verification yet (they need an email service).
+- Run has no npm or PyPI packages and no `input()`; TypeScript files don't run yet.
+- Two guests showing the same name are one person in replay.
