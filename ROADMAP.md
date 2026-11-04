@@ -27,7 +27,7 @@ M0 Relay ✅ ─► M1 Co-editing ─► M2 Reliability ─► M3 Persistence + 
 | M8 | Session replay | M | ✅ done 2026-11-03 (step through or play the room's history, files and code exactly as they were, colour per person; for people who can edit) |
 | M9 | Sync inspector and bad-network toggle | M | ✅ done 2026-11-03 (round trip, changes waiting and last confirmed from numbered pings; slow, very slow, flaky and offline for this browser, shown on its chip; message log and round-trip graph) |
 | M10 | Landing page and polish | M | ✅ done 2026-11-04 (home page and sign-in; pages on demand, crash and not-found pages, titles, link previews; invite name screen and renaming; phones; accessibility; slow and unreachable states) |
-| M11 | Hardening and deploy | M | in progress: Render + Neon chosen; 11.1 production server; 11.2 Sentry; 11.3 Render blueprint, smoke test, deploy wizard (2026-11-04); 11.4 deploy: the user's steps |
+| M11 | Hardening and deploy | M | in progress: Render + Neon chosen; 11.1 production server; 11.2 Sentry; 11.3 Render blueprint, smoke test, deploy wizard (2026-11-04); 11.4 deploy: the user's steps. Free plans only; Phase 2 skipped (the user's choice, 2026-11-04) |
 
 ## Milestones
 
@@ -73,7 +73,7 @@ Live panel: round-trip latency, pending updates, connection state, last sync. A 
 Landing page with an animated live demo, a design pass over every page, empty/loading/error states, responsive layout, fast first load, basic accessibility. The goal: someone clicking an invite link is amazed.
 
 ### M11: Hardening and deploy
-End-to-end tests of the key flows (browser-driven, automated), error handling, environment configuration, hosting decision, TLS, a post-deploy smoke test. Then Phase 1 is done and Phase 2 starts.
+End-to-end tests of the key flows (browser-driven, automated), error handling, environment configuration, hosting decision, TLS, a post-deploy smoke test. Then the project is done (Phase 2 was dropped: free hosting, and the project is complete as it is).
 
 ## Rules for this roadmap
 - Each milestone ends with something that runs end to end and has tests.

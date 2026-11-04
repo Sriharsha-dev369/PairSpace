@@ -211,7 +211,8 @@ banner "Deploy PairSpace: Neon, Sentry, Render, GitHub"
 # ── 1 ─────────────────────────────────────────────────────────────────────
 stage "Before you start"
 say "You'll create three free accounts (Neon, Sentry, Render) and one GitHub OAuth App."
-say "Render's always-on plan costs about \$7 a month: have a payment card ready."
+say "Everything is on free plans. Render's free server sleeps after 15 minutes without"
+say "visitors; the next visitor waits about 30-60 seconds while it wakes (nothing is lost)."
 say "Secrets you copy go straight into Render's dashboard; this script never stores them."
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   note "GitHub CLI is signed in: the last stages can set the smoke test's address and run it."
@@ -247,7 +248,7 @@ pause "Got both DSNs? Press Enter"
 # ── 4 ─────────────────────────────────────────────────────────────────────
 stage "Render: deploy"
 open_url "https://dashboard.render.com/register"
-step "Sign up with GitHub, and add a payment card (Account settings → Billing)."
+step "Sign up with GitHub (the free plan needs no card)."
 step "Click New → Blueprint, connect GitHub, and pick the $REPO repository."
 note "Render reads render.yaml from the repo: one web service called pairspace, in Singapore."
 step "Render asks for the values marked secret. Paste:"

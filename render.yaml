@@ -5,7 +5,7 @@ services:
   - type: web
     name: pairspace
     runtime: node
-    plan: 0.5c-512mb # always on: the free plan sleeps after 15 minutes, and a guest would wait it out
+    plan: free # sleeps after 15 minutes without visitors; the next one waits ~30-60 s while it wakes
     region: singapore # near the people using it; put Neon's database in Singapore too
     branch: main
     # dev tools (Vite, tsup, TypeScript) build it, though NODE_ENV is production
