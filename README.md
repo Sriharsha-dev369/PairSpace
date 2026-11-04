@@ -4,8 +4,11 @@
 live, sees each other's cursors, runs the code and replays how it was written. Built around a CRDT
 sync engine, with every claim below reproducible from this repo.
 
+**[Live demo: pairspace-27kx.onrender.com](https://pairspace-27kx.onrender.com)**: open it in two tabs and type. On the free
+plan the first visit after a quiet spell takes about a minute while the server wakes.
+
 [![CI](https://github.com/Sriharsha-dev369/PairSpace/actions/workflows/ci.yml/badge.svg)](https://github.com/Sriharsha-dev369/PairSpace/actions/workflows/ci.yml)
-<!-- Live demo: add the Render address here once deployed -->
+[![Smoke test](https://github.com/Sriharsha-dev369/PairSpace/actions/workflows/smoke.yml/badge.svg)](https://github.com/Sriharsha-dev369/PairSpace/actions/workflows/smoke.yml)
 
 ![Two browsers editing one file at the same time: each sees the other's cursor and typing, and a Run shows its output in both](docs/images/live.gif)
 
