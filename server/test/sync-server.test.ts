@@ -11,6 +11,7 @@ import { WebsocketProvider } from "y-websocket";
 import * as Y from "yjs";
 import { createSyncServer, type SyncServer } from "../src/sync-server";
 import { createFaultyNetwork, type FaultyNetwork } from "./faulty-network";
+import { seededRandom } from "./random";
 import { SETTLE_MS, sleep, waitFor } from "./wait";
 
 // ---------- test helpers ----------
@@ -25,15 +26,6 @@ interface RawClient {
 interface YjsClient {
   doc: Y.Doc;
   provider: WebsocketProvider;
-}
-
-// deterministic random numbers, so a failing run can be replayed from its printed seed
-function seededRandom(seed: number) {
-  let state = seed % 2147483647 || 1;
-  return () => {
-    state = (state * 48271) % 2147483647;
-    return state / 2147483647;
-  };
 }
 
 describe("sync server", () => {

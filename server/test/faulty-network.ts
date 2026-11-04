@@ -37,13 +37,13 @@ export function createFaultyNetwork(targetPort: number): Promise<FaultyNetwork> 
       while (queue.length > 0 && queue[0].at <= Date.now()) {
         deliver((queue.shift() as (typeof queue)[number]).chunk);
       }
-      if (queue.length > 0) timer = setTimeout(release, queue[0].at - Date.now());
+      if (queue.length > 0) timer = setTimeout(release, Math.max(0, queue[0].at - Date.now()));
     };
     const send = (chunk: Buffer | null) => {
       if (frozen) return;
       const at = Math.max(queue.at(-1)?.at ?? 0, Date.now() + delayMs + Math.random() * jitterMs);
       queue.push({ at, chunk });
-      if (timer === undefined) timer = setTimeout(release, at - Date.now());
+      if (timer === undefined) timer = setTimeout(release, Math.max(0, at - Date.now()));
     };
 
     open.add(from);

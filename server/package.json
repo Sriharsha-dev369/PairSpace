@@ -9,7 +9,8 @@
     "build": "tsup src/index.ts --format esm --target node24 --clean",
     "start": "node --env-file-if-exists=../.env dist/index.js",
     "test:watch": "vitest",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "convergence": "tsx test/convergence.ts"
   },
   "type": "module",
   "dependencies": {

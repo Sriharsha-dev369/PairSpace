@@ -39,6 +39,9 @@ jobs:
       - run: npm run lint
       - run: npm run knip
       - run: npm test
+      # the README's convergence claim, rechecked on every push: fails if any run doesn't converge
+      # or loses anything (20 runs per network here; npm run convergence alone does 100)
+      - run: npm run convergence -- 20
       - run: npm run build
 
   e2e:
