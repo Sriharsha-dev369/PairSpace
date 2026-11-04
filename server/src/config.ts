@@ -13,24 +13,36 @@ export interface Config {
   sentryDsn?: string; // where to report errors (Sentry); unset, they're only logged
 }
 
-const required = (name: string, what: string) => ({ error: `${name}: ${what}` });
+// what to say about one setting: missing (unset, or left empty) or set but wrong. Never its value:
+// it may be a password
+const setting = (name: string, missing: string, wrong: string) => ({
+  error: (issue: { input?: unknown }) =>
+    issue.input === undefined || issue.input === ""
+      ? `${name}: missing (${missing})`
+      : `${name}: set, but ${wrong}`,
+});
 
 // what a deployment must set: refused all together, so one deploy shows every problem
 const PRODUCTION = z.object({
   DATABASE_URL: z.url({
     protocol: /^postgres(ql)?$/,
-    ...required("DATABASE_URL", "the database's postgres:// address (Neon's connection string)"),
+    ...setting(
+      "DATABASE_URL",
+      "Neon's connection string, starting postgresql://",
+      "not a postgres:// address: paste only the part starting postgresql://, without quotes or 'psql'",
+    ),
   }),
   WEB_ORIGIN: z.url({
     protocol: /^https$/,
-    ...required(
+    ...setting(
       "WEB_ORIGIN",
       "the site's own https:// address, e.g. https://pairspace.onrender.com",
+      "not an https:// address",
     ),
   }),
   BETTER_AUTH_SECRET: z
-    .string(required("BETTER_AUTH_SECRET", "a random secret (openssl rand -base64 32)"))
-    .min(32, "BETTER_AUTH_SECRET: at least 32 characters (openssl rand -base64 32)"),
+    .string(setting("BETTER_AUTH_SECRET", "a random secret: openssl rand -base64 32", "too short"))
+    .min(32, "BETTER_AUTH_SECRET: set, but shorter than 32 characters (openssl rand -base64 32)"),
 });
 
 export class ConfigProblem extends Error {}
@@ -45,7 +57,9 @@ export function checkConfig(given: Record<string, string | undefined>): Config {
     const checked = PRODUCTION.safeParse(env);
     if (!checked.success) {
       const problems = checked.error.issues.map((issue) => `  - ${issue.message}`);
-      throw new ConfigProblem(`PairSpace can't start. Set these:\n${problems.join("\n")}`);
+      throw new ConfigProblem(
+        `PairSpace can't start. Fix these settings (on Render: the service, then Environment):\n${problems.join("\n")}`,
+      );
     }
   }
   const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET } = env;

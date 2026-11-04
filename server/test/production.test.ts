@@ -159,6 +159,24 @@ describe("settings", () => {
     );
   });
 
+  // a setting that's there but malformed (e.g. Neon's string pasted with "psql '...'") must not
+  // read like a missing one, and its value (a password) must not appear in the logs
+  it("says whether a setting is missing or set but malformed, without printing it", () => {
+    expect(() => checkConfig({ ...PRODUCTION, DATABASE_URL: undefined })).toThrow(
+      /DATABASE_URL: missing/,
+    );
+    expect(() => checkConfig({ ...PRODUCTION, DATABASE_URL: "" })).toThrow(/DATABASE_URL: missing/);
+    const wrapped = `psql '${PRODUCTION.DATABASE_URL}'`;
+    try {
+      checkConfig({ ...PRODUCTION, DATABASE_URL: wrapped });
+      expect.unreachable("a psql-wrapped string must be refused");
+    } catch (error) {
+      const message = (error as Error).message;
+      expect(message).toMatch(/DATABASE_URL: set, but not a postgres:\/\/ address/);
+      expect(message).not.toContain("secret"); // the password in PRODUCTION's DATABASE_URL
+    }
+  });
+
   it("refuses an address that isn't https, and a short secret, in production", () => {
     expect(() =>
       checkConfig({ ...PRODUCTION, WEB_ORIGIN: "http://pairspace.onrender.com" }),
