@@ -67,7 +67,15 @@ function JoinRoom({
   return <Joining roomId={roomId} />;
 }
 
+// joining normally takes well under a second; this long means the room server isn't answering
+const SLOW_JOIN_MS = 8000;
+
 function Joining({ roomId }: { roomId: string }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), SLOW_JOIN_MS);
+    return () => clearTimeout(timer);
+  }, []);
   return (
     <FullScreen>
       <LogoMark className="h-10 w-10" />
@@ -76,6 +84,22 @@ function Joining({ roomId }: { roomId: string }) {
         Joining room
       </p>
       <p className="mt-1 font-mono text-xs text-faint">{roomId}</p>
+      {slow && (
+        <div role="status" className="mt-8 max-w-xs text-center">
+          <p className="text-sm font-medium">Taking longer than usual</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted">
+            The room's server isn't answering yet. PairSpace keeps trying: check your connection, or
+            reload the page.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mt-4 h-8 rounded-lg border border-line px-3 text-xs font-medium text-muted transition hover:bg-raised hover:text-fg"
+          >
+            Reload
+          </button>
+        </div>
+      )}
     </FullScreen>
   );
 }

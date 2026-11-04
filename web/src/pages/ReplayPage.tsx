@@ -8,6 +8,7 @@ import {
   Pause,
   Play,
   SearchX,
+  WifiOff,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
@@ -55,8 +56,21 @@ export function ReplayPage() {
   usePageTitle(`Replay of ${info.data?.title ?? "a room"}`);
   const room = `/r/${roomId}${query}`;
 
+  const status = history.error instanceof ApiError ? history.error.status : null;
+  // not an answer about the room (offline, server down): it may work next time
+  if (history.isError && status !== 403 && status !== 404) {
+    return (
+      <Notice
+        icon={WifiOff}
+        title="Couldn't load this room's history"
+        body="PairSpace couldn't be reached. Check your connection, then try again."
+        isMember={member != null}
+        way={{ onClick: () => history.refetch(), label: "Try again" }}
+      />
+    );
+  }
   if (history.isError) {
-    const viewOnly = history.error instanceof ApiError && history.error.status === 403;
+    const viewOnly = status === 403;
     return viewOnly ? (
       <Notice
         icon={Lock}

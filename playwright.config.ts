@@ -33,7 +33,12 @@ export default defineConfig({
       port: SERVER_PORT,
     },
     {
-      command: `npm run dev -w web -- --port ${WEB_PORT} --strictPort`,
+      // the production build, as people get it: bundled pages, not the dev server's hundreds of
+      // separate files (which every fresh test browser downloaded again). The type check is
+      // CI's other job, so this builds without it
+      command: `npx vite build && npx vite preview --port ${WEB_PORT} --strictPort`,
+      cwd: "web",
+      timeout: 120_000, // the build comes first
       env: {
         VITE_SYNC_URL: `ws://localhost:${SERVER_PORT}`,
         VITE_RUN_TIME_LIMIT_MS: "3000", // endless loops end sooner than the real 10 s

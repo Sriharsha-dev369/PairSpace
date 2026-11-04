@@ -1,7 +1,7 @@
 // End-to-end spec for what every page shares: titles, dead ends, crashes, link previews.
 
 import { expect, test } from "@playwright/test";
-import { createRoom, memberBrowser } from "./members";
+import { createRoom, memberBrowser, shareLink } from "./members";
 
 test("an unknown address says there's nothing there, with a way home", async ({ page }) => {
   await page.goto("/no-such-page");
@@ -17,12 +17,12 @@ test("a page whose code fails to load says so, and Reload brings it back", async
   const owner = await memberBrowser(browser);
   const roomId = await createRoom(owner, "Interview prep");
   const page = await owner.newPage();
-  await page.route("**/pages/ReplayPage.tsx*", (route) => route.abort());
+  await page.route("**/ReplayPage*", (route) => route.abort()); // its code, however it's served
 
   await page.goto(`/r/${roomId}/replay`);
   await expect(page.getByRole("heading", { name: "Something went wrong" })).toBeVisible();
 
-  await page.unroute("**/pages/ReplayPage.tsx*");
+  await page.unroute("**/ReplayPage*");
   await page.getByRole("button", { name: "Reload" }).click();
   await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
 });
@@ -72,4 +72,54 @@ test("a link pasted into a chat shows PairSpace's preview card", async ({ page }
 
   const response = await page.request.get("/og.png");
   expect(response.headers()["content-type"]).toBe("image/png");
+});
+
+// ---------- when PairSpace can't be reached ----------
+
+test("joining a room that takes too long says so, and keeps trying", async ({ browser }) => {
+  const owner = await memberBrowser(browser);
+  const roomId = await createRoom(owner);
+  const page = await owner.newPage();
+  // the room server takes the connection and never answers (Vite's own socket is another port)
+  await page.routeWebSocket(/localhost:8790/, () => {});
+
+  await page.goto(`/r/${roomId}`);
+
+  await expect(page.getByText("Joining room")).toBeVisible();
+  await expect(page.getByText("Taking longer than usual")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Reload" })).toBeVisible();
+});
+
+test("an invite that can't be checked right now says so, and Try again opens it", async ({
+  browser,
+}) => {
+  const owner = await memberBrowser(browser);
+  const link = await shareLink(owner, await createRoom(owner, "Interview prep"));
+  const guest = await (await browser.newContext()).newPage();
+  await guest.route("**/api/links/*", (route) => route.abort());
+
+  await guest.goto(link);
+
+  await expect(guest.getByRole("heading", { name: "Couldn't check this invite" })).toBeVisible();
+  await guest.unroute("**/api/links/*");
+  await guest.getByRole("button", { name: "Try again" }).click();
+  await expect(guest.getByRole("button", { name: "Join room" })).toBeVisible();
+});
+
+test("a replay whose history can't load right now says so, and Try again loads it", async ({
+  browser,
+}) => {
+  const owner = await memberBrowser(browser);
+  const roomId = await createRoom(owner, "Interview prep");
+  const page = await owner.newPage();
+  await page.route("**/history*", (route) => route.abort());
+
+  await page.goto(`/r/${roomId}/replay`);
+
+  await expect(
+    page.getByRole("heading", { name: "Couldn't load this room's history" }),
+  ).toBeVisible();
+  await page.unroute("**/history*");
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
 });
