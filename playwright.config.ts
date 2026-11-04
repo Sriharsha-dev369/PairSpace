@@ -3,12 +3,15 @@ import { defineConfig, devices } from "@playwright/test";
 // apart from the dev servers' ports, so e2e runs never collide with them
 const PORT = 8790;
 
+// a deployed site to smoke-test (e2e/smoke.spec.ts), instead of starting one here
+const DEPLOYED = process.env.BASE_URL;
+
 export default defineConfig({
   testDir: "e2e",
   fullyParallel: true,
   // a stray test.only would silently skip every other test in CI
   forbidOnly: !!process.env.CI,
-  use: { baseURL: `http://localhost:${PORT}`, trace: "retain-on-failure" },
+  use: { baseURL: DEPLOYED ?? `http://localhost:${PORT}`, trace: "retain-on-failure" },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     // Run's sandbox rests on rules each browser engine applies its own way (Safari refused what
@@ -21,19 +24,21 @@ export default defineConfig({
   ],
   // one server, as in production: the built web app (bundled pages, the files people get)
   // served by the app's own server, with the API and the rooms' WebSockets on the same origin
-  webServer: {
-    command: "(cd web && npx vite build) && npx tsx server/src/index.ts",
-    env: {
-      PORT: String(PORT),
-      WEB_ORIGIN: `http://localhost:${PORT}`,
-      WEB_DIR: "web/dist",
-      VITE_RUN_TIME_LIMIT_MS: "3000", // endless loops end sooner than the real 10 s
-      VITE_SENTRY_DSN: "http://e2e@sentry.invalid/1", // nowhere: tests catch what's sent
-      // a placeholder GitHub app: tests check we send people to GitHub, not GitHub itself
-      GITHUB_CLIENT_ID: "e2e-github-app",
-      GITHUB_CLIENT_SECRET: "e2e-github-secret",
-    },
-    port: PORT,
-    timeout: 120_000, // the build comes first
-  },
+  webServer: DEPLOYED
+    ? undefined
+    : {
+        command: "(cd web && npx vite build) && npx tsx server/src/index.ts",
+        env: {
+          PORT: String(PORT),
+          WEB_ORIGIN: `http://localhost:${PORT}`,
+          WEB_DIR: "web/dist",
+          VITE_RUN_TIME_LIMIT_MS: "3000", // endless loops end sooner than the real 10 s
+          VITE_SENTRY_DSN: "http://e2e@sentry.invalid/1", // nowhere: tests catch what's sent
+          // a placeholder GitHub app: tests check we send people to GitHub, not GitHub itself
+          GITHUB_CLIENT_ID: "e2e-github-app",
+          GITHUB_CLIENT_SECRET: "e2e-github-secret",
+        },
+        port: PORT,
+        timeout: 120_000, // the build comes first
+      },
 });

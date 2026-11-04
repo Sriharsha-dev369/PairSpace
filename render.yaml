@@ -1,0 +1,35 @@
+# How PairSpace runs on Render (a "Blueprint": https://render.com/docs/blueprint-spec). One web
+# service serves the built web app, the API and the rooms' WebSockets on one origin. Node's
+# version comes from .nvmrc (24, as in CI). The database is Neon's, outside Render.
+services:
+  - type: web
+    name: pairspace
+    runtime: node
+    plan: 0.5c-512mb # always on: the free plan sleeps after 15 minutes, and a guest would wait it out
+    region: singapore # near the people using it; put Neon's database in Singapore too
+    branch: main
+    # dev tools (Vite, tsup, TypeScript) build it, though NODE_ENV is production
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start -w server
+    healthCheckPath: /api/health # up only when the database answers
+    autoDeployTrigger: checksPass # each push to main, once GitHub's CI has passed
+    envVars:
+      - key: NODE_ENV
+        value: production # the server then refuses to start without its settings
+      - key: WEB_DIR
+        value: ../web/dist # from server/, where npm start runs
+      - key: BETTER_AUTH_SECRET
+        generateValue: true # 256 random bits, made by Render
+      # asked for in Render's dashboard when the Blueprint is created (secrets stay out of git):
+      - key: DATABASE_URL
+        sync: false # Neon's connection string
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: SENTRY_DSN
+        sync: false # the server's Sentry project
+      - key: VITE_SENTRY_DSN
+        sync: false # the browser's, read while the web app is built
+    # WEB_ORIGIN is the service's own address (Render's RENDER_EXTERNAL_URL) unless set: set it
+    # to a custom domain's https:// address when there is one

@@ -17,7 +17,12 @@ delayed networks and concurrent changes.
 
 ## Status
 
-M1 and M2 done: open the web app, share the room link, and edit one file together live with names and cursors; it survives drops, offline spells and bad networks. M3 done: rooms are saved to Postgres (every change, with who made it and when) and survive a server restart. M4 done: sign up with email and password or GitHub; members create rooms, invited guests join by link. Not deployed.
+Phase 1 milestones M1 to M10 are done, M11 (deploy) in progress. Rooms you share by link, where several people edit
+the same files live with names and cursors; it survives drops, offline spells and bad networks, and saves
+every change to Postgres. Accounts by email and password or GitHub; invited guests join by link with a
+name. Multi-file projects, Run (JavaScript and Python, in the browser), edit or view-only links, session
+replay, and a sync inspector with a simulated bad network. Works on phones; every page passes automated
+accessibility checks (WCAG 2.1 AA).
 
 ## Run it
 
@@ -40,3 +45,15 @@ npm run build -w server && npm start -w server   # compiled server
 ```
 
 CI (GitHub Actions, `.github/workflows/ci.yml`) runs the same checks on every push to `main` and every pull request.
+
+## Deploy it
+
+On Render (one always-on web service, from `render.yaml`) with Neon's free Postgres and Sentry for
+errors. The steps only a person can do (accounts, secrets, the GitHub OAuth App) are a guided script:
+
+```
+bash scripts/deploy-wizard.sh
+```
+
+Then `.github/workflows/smoke.yml` checks the site every day (set the `PRODUCTION_URL` repository
+variable; the wizard does), or by hand: `BASE_URL=https://… npx playwright test e2e/smoke.spec.ts --project chromium`.

@@ -145,6 +145,14 @@ describe("settings", () => {
     });
   });
 
+  // Render tells a service its own address, so a deploy there needn't be told it again
+  it("takes the site's address from Render when WEB_ORIGIN isn't set", () => {
+    const { WEB_ORIGIN: _, ...onRender } = PRODUCTION;
+    expect(
+      checkConfig({ ...onRender, RENDER_EXTERNAL_URL: "https://pairspace.onrender.com" }).webOrigin,
+    ).toBe("https://pairspace.onrender.com");
+  });
+
   it("refuses to run in production without its settings, naming every one that's missing", () => {
     expect(() => checkConfig({ NODE_ENV: "production" })).toThrow(
       /DATABASE_URL[\s\S]*WEB_ORIGIN[\s\S]*BETTER_AUTH_SECRET/,

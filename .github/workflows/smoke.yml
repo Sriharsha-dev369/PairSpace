@@ -1,0 +1,54 @@
+# Is the deployed site up and working? Runs every day against the site in the PRODUCTION_URL
+# repository variable (Settings > Secrets and variables > Actions > Variables), and by hand
+# (Actions > Smoke test > Run workflow), e.g. after a deploy. The daily run only reads; ticking
+# "deep" also signs up a throwaway member and checks a room syncs, which writes to the site.
+name: Smoke test
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # every day, 03:17 UTC
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Site to check (blank: the PRODUCTION_URL variable)"
+        required: false
+      deep:
+        description: "Also sign up a throwaway member and check a room syncs (writes to the site)"
+        type: boolean
+        default: false
+
+jobs:
+  smoke:
+    name: Smoke test
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: ${{ inputs.url || vars.PRODUCTION_URL }}
+    steps:
+      - name: Skip until there's a site to check
+        if: env.BASE_URL == ''
+        run: |
+          echo "No site yet: set the PRODUCTION_URL repository variable after deploying."
+      - if: env.BASE_URL != ''
+        uses: actions/checkout@v7
+      - if: env.BASE_URL != ''
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - if: env.BASE_URL != ''
+        run: npm ci
+      - if: env.BASE_URL != ''
+        run: npx playwright install --with-deps chromium
+      - name: Check ${{ env.BASE_URL }}
+        if: env.BASE_URL != ''
+        run: |
+          if [ "${{ inputs.deep }}" = "true" ]; then
+            npx playwright test e2e/smoke.spec.ts --project chromium
+          else
+            npx playwright test e2e/smoke.spec.ts --project chromium --grep-invert @deep
+          fi
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: smoke-traces
+          path: test-results/

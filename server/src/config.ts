@@ -35,7 +35,12 @@ const PRODUCTION = z.object({
 
 export class ConfigProblem extends Error {}
 
-export function checkConfig(env: Record<string, string | undefined>): Config {
+export function checkConfig(given: Record<string, string | undefined>): Config {
+  // on Render, the service's own address stands in for WEB_ORIGIN (a custom domain sets it)
+  const env: Record<string, string | undefined> = {
+    ...given,
+    WEB_ORIGIN: given.WEB_ORIGIN ?? given.RENDER_EXTERNAL_URL,
+  };
   if (env.NODE_ENV === "production") {
     const checked = PRODUCTION.safeParse(env);
     if (!checked.success) {
