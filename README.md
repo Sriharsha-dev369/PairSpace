@@ -190,6 +190,9 @@ bash scripts/deploy-wizard.sh
 
 Then `.github/workflows/smoke.yml` checks the site every day (set the `PRODUCTION_URL` repository
 variable; the wizard does), or by hand: `BASE_URL=https://… npx playwright test e2e/smoke.spec.ts --project chromium`.
+With `BASE_URL`, the smoke tests first wait up to two minutes for `/api/health` to return
+`{ "ok": true }`, allowing the free service to wake up. The page and health checks then run with
+their normal timeouts; a service that never becomes healthy still fails the run.
 
 ## Known limitations
 

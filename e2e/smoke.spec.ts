@@ -5,6 +5,22 @@
 import { expect, test } from "@playwright/test";
 import { createRoom, memberBrowser, openRoomAs, shareLink } from "./members";
 
+test.beforeAll("wait for the deployed service to wake up", async ({ request }) => {
+  if (!process.env.BASE_URL) return;
+
+  // Render's free service can take about a minute to wake after an idle spell.
+  test.setTimeout(150_000);
+  await expect(async () => {
+    const health = await request.get("/api/health", { timeout: 10_000 });
+    try {
+      expect(health.status()).toBe(200);
+      expect(await health.json()).toEqual({ ok: true });
+    } finally {
+      await health.dispose();
+    }
+  }).toPass({ timeout: 120_000, intervals: [1_000, 2_000, 5_000] });
+});
+
 // the app's code ran: the home page set its own title (index.html's is plain "PairSpace")
 test("the app loads", async ({ page }) => {
   await page.goto("/");
